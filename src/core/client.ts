@@ -592,18 +592,35 @@ Rules:
     history: Array<{ role: string; content: string }>,
     imageCaption?: string | null
   ): Promise<string | null> {
-    const messages = [
-      { role: 'system', content: BotClient.SYSTEM_PROMPT },
-      ...history.slice(-10),
-      { role: 'user', content: imageCaption ? `[Image: ${imageCaption}] ${text}` : text },
-    ];
+    if (!this.sock) return null;
+
+    const context = history.slice(-6)
+      .map(h => `${h.role}: ${h.content}`)
+      .join('\n');
+    const prompt = context
+      ? `Conversation:\n${context}\nuser: ${text}\nassistant:`
+      : text;
+
+    const metaAIJid = config.META_AI_NUMBER
+      ? config.META_AI_NUMBER.replace(/\D/g, '') + '@s.whatsapp.net'
+      : '18002428244@s.whatsapp.net';
+
+    try {
+      const sent = await this.sock.sendMessage(metaAIJid, { text: prompt });
+      if (!sent?.key?.id) return null;
+
+      const response = await this.waitForMetaResponse(sent.key.id, metaAIJid, 20000);
+      if (response) return response;
+    } catch {
+      // Meta AI WhatsApp failed, fall through to API
+    }
 
     const res = await fetch('https://graph.facebook.com/v18.0/me/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         recipient: 'me',
-        message: { text: messages.map(m => m.content).join('\n') },
+        message: { text: prompt },
       }),
       signal: AbortSignal.timeout(15000),
     }).catch(() => null);
@@ -620,7 +637,7 @@ Rules:
         'User-Agent': 'Mozilla/5.0 (compatible; MtaulaBot/2.0)',
       },
       body: JSON.stringify({
-        prompt: `You are Mtaula 01, a smart WhatsApp assistant. Reply in the same language as the user (Swahili or English).\n\nConversation:\n${history.slice(-6).map(h => `${h.role}: ${h.content}`).join('\n')}\nuser: ${text}\nassistant:`,
+        prompt: `You are Mtaula 01, a smart WhatsApp assistant. Reply in the same language as the user (Swahili or English).\n\n${prompt}`,
       }),
       signal: AbortSignal.timeout(15000),
     }).catch(() => null);
@@ -632,6 +649,48 @@ Rules:
       }
     }
     return null;
+  }
+
+  private waitForMetaResponse(
+    sentId: string,
+    from: string,
+    timeoutMs: number
+  ): Promise<string | null> {
+    return new Promise(resolve => {
+      const start = Date.now();
+      const check = () => {
+        if (!this.sock) return resolve(null);
+        this.sock.ev.on('messages.upsert', handler);
+        setTimeout(() => {
+          this.sock?.ev.off('messages.upsert', handler);
+          resolve(null);
+        }, timeoutMs);
+      };
+
+      const handler = (events: any) => {
+        for (const evt of events) {
+          const msg = evt.message;
+          if (!msg) continue;
+          const jid = evt.key?.remoteJid;
+          const id = evt.key?.id;
+          if (jid !== from || evt.key?.fromMe) continue;
+
+          const text =
+            msg.conversation ||
+            msg.extendedTextMessage?.text ||
+            msg.imageMessage?.caption ||
+            msg.videoMessage?.caption ||
+            '';
+
+          if (text && id !== sentId) {
+            this.sock?.ev.off('messages.upsert', handler);
+            return resolve(text);
+          }
+        }
+      };
+
+      check();
+    });
   }
 
   private async callGemini(
