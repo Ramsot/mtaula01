@@ -76,6 +76,7 @@ export interface BotConfig {
   MODE: string;
   OWNER_NAME: string;
   OWNER_NUMBER: string;
+  OWNERS: string[];
   BOT_NAME: string;
   BOT_IMAGE: string;
   DESCRIPTION: string;

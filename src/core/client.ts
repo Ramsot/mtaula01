@@ -49,6 +49,29 @@ export class BotClient extends EventEmitter {
     };
   }
 
+  isOwner(jid: string): boolean {
+    const digits = (s: string) => s.replace(/\D/g, '');
+    const senderDigits = digits(jid);
+    if (!senderDigits) return false;
+
+    if (config.OWNER_NUMBER) {
+      const ownerDigits = digits(config.OWNER_NUMBER);
+      if (senderDigits.endsWith(ownerDigits) || ownerDigits.endsWith(senderDigits)) return true;
+    }
+
+    const botDigits = digits(this.sock?.user?.id || '');
+    if (botDigits && senderDigits === botDigits) return true;
+
+    if (config.OWNERS?.length) {
+      for (const o of config.OWNERS) {
+        const od = digits(o);
+        if (od && (senderDigits.endsWith(od) || od.endsWith(senderDigits))) return true;
+      }
+    }
+
+    return false;
+  }
+
   getQr(): string | null {
     return this.currentQr;
   }
@@ -224,10 +247,7 @@ export class BotClient extends EventEmitter {
     if (m.key.fromMe && config.MODE === 'self') return;
 
     const botJid = decodeJid(this.sock.user?.id || '');
-    const ownerJid = config.OWNER_NUMBER
-      ? config.OWNER_NUMBER.replace(/\D/g, '') + '@s.whatsapp.net'
-      : botJid;
-    const isCreator = m.sender === ownerJid || m.sender === botJid;
+    const isCreator = this.isOwner(m.sender) || m.fromMe || m.sender === botJid;
 
     if (config.MODE === 'self' && !isCreator) return;
 
