@@ -36,6 +36,84 @@
       color: #666;
       margin-top: 8px;
     }
+    .tab-buttons {
+      display: flex;
+      margin-bottom: 24px;
+      border-radius: 10px;
+      background: #f3f4f6;
+      padding: 4px;
+    }
+    .tab-btn {
+      flex: 1;
+      padding: 12px;
+      border: none;
+      background: transparent;
+      font-size: 14px;
+      font-weight: 600;
+      color: #666;
+      cursor: pointer;
+      border-radius: 8px;
+      transition: all 0.2s;
+    }
+    .tab-btn.active {
+      background: white;
+      color: #667eea;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
+      animation: fadeIn 0.2s ease;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .qr-container {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+    .qr-code-img {
+      max-width: 100%;
+      border-radius: 12px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+      background: white;
+      padding: 16px;
+    }
+    .qr-loading {
+      padding: 40px;
+      color: #666;
+    }
+    .qr-error {
+      padding: 20px;
+      background: #fef2f2;
+      border: 1px solid #fca5a5;
+      border-radius: 10px;
+      color: #991b1b;
+    }
+    .qr-instructions {
+      font-size: 14px;
+      color: #666;
+      line-height: 1.6;
+      margin-top: 16px;
+    }
+    .qr-instructions ol { margin-left: 20px; }
+    .qr-instructions li { margin-bottom: 8px; }
+    .refresh-qr {
+      margin-top: 16px;
+      padding: 10px 20px;
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    .refresh-qr:hover { background: #5568d3; }
+    .refresh-qr:disabled { opacity: 0.6; cursor: not-allowed; }
+
     .form-group {
       margin-bottom: 20px;
     }
@@ -174,6 +252,7 @@
     }
     .status.connected .status-dot { background: #22c55e; }
     .status.disconnected .status-dot { background: #ef4444; }
+    .status.connecting .status-dot { background: #f59e0b; }
   </style>
 </head>
 <body>
@@ -188,26 +267,69 @@
       <span id="statusText">Checking bot status...</span>
     </div>
 
-    <form id="pairForm" class="form-group">
-      <label for="phoneNumber">Phone Number</label>
-      <input 
-        type="tel" 
-        id="phoneNumber" 
-        name="phoneNumber" 
-        placeholder="2547XXXXXXXX"
-        required
-        autocomplete="tel"
-        inputmode="tel"
-      >
-      <button type="submit" class="btn" id="submitBtn">Get Pairing Code</button>
-    </form>
-
-    <div id="loading" class="loading">
-      <div class="spinner"></div>
-      <p>Generating pairing code...</p>
+    <div class="tab-buttons">
+      <button type="button" class="tab-btn active" data-tab="qr">📷 QR Code</button>
+      <button type="button" class="tab-btn" data-tab="pair">🔐 Pairing Code</button>
     </div>
 
-    <div id="result" class="result"></div>
+    <div id="qrTab" class="tab-content active">
+      <div class="qr-container">
+        <div id="qrLoading" class="qr-loading">
+          <div class="spinner" style="margin: 0 auto 16px;"></div>
+          <p>Loading QR code...</p>
+        </div>
+        <div id="qrError" class="qr-error" style="display: none;"></div>
+        <img id="qrImage" class="qr-code-img" style="display: none;" alt="WhatsApp QR Code">
+      </div>
+      <div id="qrInstructions" class="qr-instructions" style="display: none;">
+        <p><strong>How to link with QR:</strong></p>
+        <ol>
+          <li>Open WhatsApp on your phone</li>
+          <li>Go to <strong>Settings</strong> → <strong>Linked Devices</strong></li>
+          <li>Tap <strong>Link a Device</strong></li>
+          <li>Point camera at the QR code above</li>
+          <li>Wait for connection confirmation</li>
+        </ol>
+        <p style="margin-top: 12px; color: #f59e0b; font-weight: 500;">
+          QR code refreshes automatically. If expired, click "Refresh QR".
+        </p>
+      </div>
+      <button id="refreshQr" class="refresh-qr" style="display: none;">🔄 Refresh QR Code</button>
+    </div>
+
+    <div id="pairTab" class="tab-content">
+      <form id="pairForm" class="form-group">
+        <label for="phoneNumber">Phone Number</label>
+        <input 
+          type="tel" 
+          id="phoneNumber" 
+          name="phoneNumber" 
+          placeholder="2547XXXXXXXX"
+          required
+          autocomplete="tel"
+          inputmode="tel"
+        >
+        <button type="submit" class="btn" id="submitBtn">Get Pairing Code</button>
+      </form>
+
+      <div id="loading" class="loading">
+        <div class="spinner"></div>
+        <p>Generating pairing code...</p>
+      </div>
+
+      <div id="pairResult" class="result"></div>
+
+      <div class="qr-instructions" style="margin-top: 16px;">
+        <p><strong>How to link with pairing code:</strong></p>
+        <ol>
+          <li>Open WhatsApp on your phone</li>
+          <li>Go to <strong>Settings</strong> → <strong>Linked Devices</strong></li>
+          <li>Tap <strong>Link with Phone Number</strong></li>
+          <li>Enter the pairing code</li>
+          <li>Wait for connection confirmation</li>
+        </ol>
+      </div>
+    </div>
 
     <div class="footer">
       <p>Mtaula 01 WhatsApp Bot &copy; 2025</p>
@@ -216,32 +338,109 @@
   </div>
 
   <script>
-    const form = document.getElementById('pairForm');
+    const tabBtns = document.querySelectorAll('.tab-btn');
+    const tabContents = document.querySelectorAll('.tab-content');
+    
+    tabBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        tabBtns.forEach(b => b.classList.remove('active'));
+        tabContents.forEach(c => c.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById(btn.dataset.tab + 'Tab').classList.add('active');
+      });
+    });
+
+    const qrLoading = document.getElementById('qrLoading');
+    const qrError = document.getElementById('qrError');
+    const qrImage = document.getElementById('qrImage');
+    const qrInstructions = document.getElementById('qrInstructions');
+    const refreshQrBtn = document.getElementById('refreshQr');
+    
+    const pairForm = document.getElementById('pairForm');
     const phoneInput = document.getElementById('phoneNumber');
     const submitBtn = document.getElementById('submitBtn');
     const loading = document.getElementById('loading');
-    const result = document.getElementById('result');
+    const pairResult = document.getElementById('pairResult');
+    
     const statusEl = document.getElementById('status');
     const statusText = document.getElementById('statusText');
+
+    let qrPollInterval = null;
+
+    const STATUS_LABELS = {
+      waiting_for_pairing: 'Bot ready - scan QR or enter phone number for pairing code',
+      connecting: 'Bot is starting up - WhatsApp not connected yet...'
+    };
 
     async function checkStatus() {
       try {
         const res = await fetch('/api/status');
         const data = await res.json();
-        statusEl.className = 'status ' + (data.connected ? 'connected' : 'disconnected');
+        const ready = data.state === 'connected' || data.state === 'waiting_for_pairing';
+        
+        if (data.state === 'connecting') {
+          statusEl.className = 'status connecting';
+        } else {
+          statusEl.className = 'status ' + (ready ? 'connected' : 'disconnected');
+        }
+        
         statusText.textContent = data.connected 
           ? `Bot connected as ${data.user?.split('@')[0] || 'Unknown'}`
-          : 'Bot not connected - waiting for pairing...';
+          : (STATUS_LABELS[data.state] || 'Bot not connected - waiting for pairing...');
       } catch (e) {
         statusEl.className = 'status disconnected';
         statusText.textContent = 'Unable to check bot status';
       }
     }
 
-    checkStatus();
-    setInterval(checkStatus, 30000);
+    async function loadQrCode() {
+      try {
+        const res = await fetch('/api/qr?format=image');
+        if (res.ok) {
+          qrLoading.style.display = 'none';
+          qrError.style.display = 'none';
+          qrImage.src = URL.createObjectURL(await res.blob());
+          qrImage.style.display = 'block';
+          qrInstructions.style.display = 'block';
+          refreshQrBtn.style.display = 'block';
+        } else if (res.status === 404) {
+          qrLoading.style.display = 'none';
+          qrError.style.display = 'block';
+          qrError.textContent = 'Bot is already connected! No QR code needed.';
+          refreshQrBtn.style.display = 'none';
+        } else {
+          throw new Error('Failed to load QR');
+        }
+      } catch (e) {
+        qrLoading.style.display = 'none';
+        qrError.style.display = 'block';
+        qrError.textContent = 'Failed to load QR code. Bot may still be starting...';
+        refreshQrBtn.style.display = 'block';
+      }
+    }
 
-    form.addEventListener('submit', async (e) => {
+    function startQrPolling() {
+      if (qrPollInterval) clearInterval(qrPollInterval);
+      qrPollInterval = setInterval(() => {
+        loadQrCode();
+      }, 15000);
+    }
+
+    refreshQrBtn.addEventListener('click', () => {
+      qrLoading.style.display = 'block';
+      qrError.style.display = 'none';
+      qrImage.style.display = 'none';
+      qrInstructions.style.display = 'none';
+      refreshQrBtn.style.display = 'none';
+      loadQrCode();
+    });
+
+    checkStatus();
+    loadQrCode();
+    startQrPolling();
+    setInterval(checkStatus, 10000);
+
+    pairForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       
       const phoneNumber = phoneInput.value.trim();
@@ -249,21 +448,26 @@
 
       submitBtn.disabled = true;
       loading.classList.add('show');
-      result.style.display = 'none';
-      result.className = 'result';
+      pairResult.style.display = 'none';
+      pairResult.className = 'result';
 
       try {
-        const res = await fetch('/api/pair', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phoneNumber })
-        });
-
-        const data = await res.json();
+        let data = null;
+        for (let attempt = 1; attempt <= 4; attempt++) {
+          const res = await fetch('/api/pair', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ phoneNumber })
+          });
+          data = await res.json();
+          if (!data.retryable || attempt === 4) break;
+          statusText.textContent = `Bot is still starting up - retrying (${attempt}/4)...`;
+          await new Promise((resolve) => setTimeout(resolve, 5000));
+        }
 
         if (data.success) {
-          result.className = 'result success';
-          result.innerHTML = `
+          pairResult.className = 'result success';
+          pairResult.innerHTML = `
             <h3>✅ Pairing Code Generated</h3>
             <div class="code">${data.pairingCode}</div>
             <div class="instructions">
@@ -281,23 +485,24 @@
             </div>
           `;
         } else {
-          result.className = 'result error';
-          result.innerHTML = `
+          pairResult.className = 'result error';
+          pairResult.innerHTML = `
             <h3>❌ Error</h3>
             <p>${data.error || 'Failed to generate pairing code'}</p>
           `;
         }
-        result.style.display = 'block';
+        pairResult.style.display = 'block';
       } catch (error) {
-        result.className = 'result error';
-        result.innerHTML = `
+        pairResult.className = 'result error';
+        pairResult.innerHTML = `
           <h3>❌ Error</h3>
           <p>Network error. Please try again.</p>
         `;
-        result.style.display = 'block';
+        pairResult.style.display = 'block';
       } finally {
         submitBtn.disabled = false;
         loading.classList.remove('show');
+        checkStatus();
       }
     });
 
