@@ -26,8 +26,22 @@ export class BotClient extends EventEmitter {
   private registry = new CommandRegistry();
   private antilinkChats = new Set<string>();
   private messageStore = new Map<string, any>();
+  private chatHistories = new Map<string, Array<{ role: string; content: string }>>();
   private static MAX_STORE_SIZE = 10000;
   private static MESSAGE_TTL = 48 * 60 * 60 * 1000;
+  private static MAX_HISTORY = 30;
+  private static SYSTEM_PROMPT = `You are Mtaula 01, a smart, friendly WhatsApp assistant. You speak Swahili and English fluently and can mix both naturally (Swahili-English code-switching). You are helpful, witty, and conversational.
+
+Rules:
+- Be concise but informative (WhatsApp chat, not essays)
+- Use Swahili if the user writes in Swahili, English if English
+- You can mix Swahili and English naturally
+- Be friendly and human-like, not robotic
+- Never say you are an AI language model - you are Mtaula 01, a WhatsApp assistant
+- If asked about sensitive topics (adult content, violence, illegal acts), politely decline
+- You can help with: general knowledge, calculations, translations, advice, jokes, recipes, coding, school work, news, and daily life questions
+- Keep responses under 1500 characters for WhatsApp
+- Use WhatsApp-friendly formatting (no markdown headers, use *bold* and _italic_ sparingly)`;
 
   constructor() {
     super();
@@ -259,6 +273,8 @@ export class BotClient extends EventEmitter {
       await m.react('👍').catch(() => {});
     }
 
+    await this.handleAutoChat(m);
+
     if ((globalThis as any).__autoVO) {
       await this.handleViewOnce(m).catch(() => {});
     }
@@ -468,6 +484,250 @@ export class BotClient extends EventEmitter {
 
     this.messageStore.delete(deletedKey);
     logger.info({ deletedKey, from: sender, isGroup }, 'Anti-delete: message forwarded to owner');
+  }
+
+  private async handleAutoChat(m: SerializedMessage): Promise<void> {
+    if (!this.sock) return;
+    if (!m.body || m.body.startsWith('.')) return;
+    if (m.fromMe) return;
+    if (this.isOwner(m.sender)) return;
+
+    const autoChatOn = (globalThis as any).__autoChat;
+    const autoChatGroupOn = (globalThis as any).__autoChatGroup;
+
+    let shouldRespond = false;
+
+    if (m.isPrivate && autoChatOn) {
+      shouldRespond = true;
+    } else if (m.isGroup && autoChatGroupOn) {
+      const botJid = decodeJid(this.sock.user?.id || '').split('@')[0];
+      const isMentioned = m.mentionedJid?.some(j => j.includes(botJid));
+      const isReplyToBot = m.quoted?.fromMe || m.quoted?.sender?.includes(botJid);
+      if (isMentioned || isReplyToBot) shouldRespond = true;
+    }
+
+    if (!shouldRespond) return;
+
+    let userText = m.body;
+    if (m.isGroup && m.mentionedJid?.length) {
+      const botJid = decodeJid(this.sock.user?.id || '');
+      userText = userText.replace(new RegExp(`@${botJid.split('@')[0]}`, 'g'), '').trim();
+      if (!userText) userText = 'Habari';
+    }
+
+    await m.react('🤖').catch(() => {});
+
+    try {
+      const history = this.getChatHistory(m.sender);
+      const aiReply = await this.callAI(userText, history, m);
+
+      if (!aiReply) {
+        await m.react('❌').catch(() => {});
+        return;
+      }
+
+      this.addChatHistory(m.sender, 'user', userText);
+      this.addChatHistory(m.sender, 'assistant', aiReply);
+
+      await this.sock.sendMessage(m.from, {
+        text: aiReply,
+        mentions: m.isGroup ? m.mentionedJid : undefined,
+      });
+      await m.react('✅').catch(() => {});
+
+      logger.info({ from: m.sender, chat: m.from, isGroup: m.isGroup }, 'Auto-chat replied');
+    } catch (err: any) {
+      await m.react('❌').catch(() => {});
+      logger.error({ err: err?.message }, 'Auto-chat failed');
+    }
+  }
+
+  private getChatHistory(jid: string): Array<{ role: string; content: string }> {
+    return this.chatHistories.get(jid) || [];
+  }
+
+  private addChatHistory(jid: string, role: string, content: string): void {
+    const history = this.chatHistories.get(jid) || [];
+    history.push({ role, content });
+    if (history.length > BotClient.MAX_HISTORY) {
+      history.splice(0, history.length - BotClient.MAX_HISTORY);
+    }
+    this.chatHistories.set(jid, history);
+  }
+
+  private async callAI(
+    userText: string,
+    history: Array<{ role: string; content: string }>,
+    m?: SerializedMessage
+  ): Promise<string | null> {
+    const imageInfo = this.extractImageInfo(m);
+
+    const engines: Array<() => Promise<string | null>> = [
+      () => this.callMetaAI(userText, history, imageInfo),
+      () => this.callGemini(userText, history, imageInfo),
+      () => this.callOpenAI(userText, history, imageInfo),
+      () => this.callGroq(userText, history),
+    ];
+
+    for (const engine of engines) {
+      try {
+        const result = await engine();
+        if (result) return result;
+      } catch {
+        continue;
+      }
+    }
+    return null;
+  }
+
+  private extractImageInfo(m?: SerializedMessage): string | null {
+    if (!m) return null;
+    const msg = m.message as any;
+    const img = msg?.imageMessage || msg?.viewOnceMessage?.message?.imageMessage;
+    return img?.caption || null;
+  }
+
+  private async callMetaAI(
+    text: string,
+    history: Array<{ role: string; content: string }>,
+    imageCaption?: string | null
+  ): Promise<string | null> {
+    const messages = [
+      { role: 'system', content: BotClient.SYSTEM_PROMPT },
+      ...history.slice(-10),
+      { role: 'user', content: imageCaption ? `[Image: ${imageCaption}] ${text}` : text },
+    ];
+
+    const res = await fetch('https://graph.facebook.com/v18.0/me/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipient: 'me',
+        message: { text: messages.map(m => m.content).join('\n') },
+      }),
+      signal: AbortSignal.timeout(15000),
+    }).catch(() => null);
+
+    if (res?.ok) {
+      const data: any = await res.json().catch(() => null);
+      if (data?.message?.text) return data.message.text;
+    }
+
+    const metaRes = await fetch('https://www.meta.ai/api/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (compatible; MtaulaBot/2.0)',
+      },
+      body: JSON.stringify({
+        prompt: `You are Mtaula 01, a smart WhatsApp assistant. Reply in the same language as the user (Swahili or English).\n\nConversation:\n${history.slice(-6).map(h => `${h.role}: ${h.content}`).join('\n')}\nuser: ${text}\nassistant:`,
+      }),
+      signal: AbortSignal.timeout(15000),
+    }).catch(() => null);
+
+    if (metaRes?.ok) {
+      const data: any = await metaRes.json().catch(() => null);
+      if (data?.response || data?.text || data?.message) {
+        return data.response || data.text || data.message;
+      }
+    }
+    return null;
+  }
+
+  private async callGemini(
+    text: string,
+    history: Array<{ role: string; content: string }>,
+    imageCaption?: string | null
+  ): Promise<string | null> {
+    if (!config.GEMINI_KEY) return null;
+
+    const contents = [
+      ...history.slice(-10).map(h => ({
+        role: h.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: h.content }],
+      })),
+      {
+        role: 'user',
+        parts: [{ text: imageCaption ? `[Image: ${imageCaption}] ${text}` : text }],
+      },
+    ];
+
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${config.GEMINI_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents,
+          systemInstruction: { parts: [{ text: BotClient.SYSTEM_PROMPT }] },
+          generationConfig: { maxOutputTokens: 2048, temperature: 0.8 },
+        }),
+        signal: AbortSignal.timeout(30000),
+      }
+    );
+
+    if (!res.ok) return null;
+    const data = (await res.json()) as any;
+    return data?.candidates?.[0]?.content?.parts?.[0]?.text || null;
+  }
+
+  private async callOpenAI(
+    text: string,
+    history: Array<{ role: string; content: string }>,
+    imageCaption?: string | null
+  ): Promise<string | null> {
+    if (!config.OPENAI_KEY) return null;
+
+    const messages = [
+      { role: 'system', content: BotClient.SYSTEM_PROMPT },
+      ...history.slice(-10),
+      { role: 'user', content: imageCaption ? `[Image: ${imageCaption}] ${text}` : text },
+    ];
+
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.OPENAI_KEY}`,
+      },
+      body: JSON.stringify({ model: 'gpt-4o-mini', messages, max_tokens: 1024 }),
+      signal: AbortSignal.timeout(30000),
+    });
+
+    if (!res.ok) return null;
+    const data = (await res.json()) as any;
+    return data?.choices?.[0]?.message?.content || null;
+  }
+
+  private async callGroq(
+    text: string,
+    history: Array<{ role: string; content: string }>
+  ): Promise<string | null> {
+    if (!config.GROQ_KEY) return null;
+
+    const messages = [
+      { role: 'system', content: BotClient.SYSTEM_PROMPT },
+      ...history.slice(-10),
+      { role: 'user', content: text },
+    ];
+
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.GROQ_KEY}`,
+      },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        messages,
+        max_tokens: 1024,
+      }),
+      signal: AbortSignal.timeout(30000),
+    });
+
+    if (!res.ok) return null;
+    const data = (await res.json()) as any;
+    return data?.choices?.[0]?.message?.content || null;
   }
 
   private async handleViewOnce(m: SerializedMessage): Promise<void> {
