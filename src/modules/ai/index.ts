@@ -1,162 +1,205 @@
-import config from '../../config/index.js';
 import type { Command, CommandContext } from '../../core/types.js';
 
-async function callGemini(prompt: string, history: { role: string; text: string }[]): Promise<string> {
-  if (!config.GEMINI_KEY) throw new Error('GEMINI_KEY not set in environment');
+const AI_CHANNEL = '867051314767696';
+const AI_HISTORY = new Map<string, Array<{ role: string; content: string }>>();
+const MAX_HISTORY = 20;
 
-  const contents = [
-    ...history.map(h => ({
-      role: h.role === 'user' ? 'user' : 'model',
-      parts: [{ text: h.text }],
-    })),
-    { role: 'user', parts: [{ text: prompt }] },
-  ];
-
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${config.GEMINI_KEY}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents,
-        generationConfig: { maxOutputTokens: 2048, temperature: 0.7 },
-      }),
-    }
-  );
-
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`Gemini API error: ${response.status}`);
-  }
-
-  const data: any = await response.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text || 'No response from Gemini';
+function getHistory(jid: string) {
+  return AI_HISTORY.get(jid) || [];
 }
 
-async function callOpenAI(prompt: string, history: { role: string; text: string }[]): Promise<string> {
-  if (!config.OPENAI_KEY) throw new Error('OPENAI_KEY not set in environment');
-
-  const messages = [
-    { role: 'system', content: `You are ${config.BOT_NAME}, a helpful WhatsApp assistant.` },
-    ...history.map(h => ({ role: h.role as string, content: h.text })),
-    { role: 'user', content: prompt },
-  ];
-
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.OPENAI_KEY}`,
-    },
-    body: JSON.stringify({ model: config.OPENAI_MODEL, messages, max_tokens: 2048 }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`OpenAI API error: ${response.status}`);
-  }
-
-  const data: any = await response.json();
-  return data.choices?.[0]?.message?.content || 'No response from OpenAI';
+function addHistory(jid: string, role: string, content: string) {
+  const h = getHistory(jid);
+  h.push({ role, content });
+  if (h.length > MAX_HISTORY) h.splice(0, h.length - MAX_HISTORY);
+  AI_HISTORY.set(jid, h);
 }
 
-const chatHistory = new Map<string, { role: string; text: string }[]>();
+async function chatWithAI(
+  sock: any,
+  prompt: string,
+  history: Array<{ role: string; content: string }>
+): Promise<string | null> {
+  const aiJid = AI_CHANNEL + '@s.whatsapp.net';
 
-function getHistory(chatId: string) {
-  if (!chatHistory.has(chatId)) chatHistory.set(chatId, []);
-  return chatHistory.get(chatId)!;
+  const context = history.slice(-8)
+    .map(h => `${h.role}: ${h.content}`)
+    .join('\n');
+  const fullPrompt = context
+    ? `Conversation:\n${context}\nuser: ${prompt}\nassistant:`
+    : prompt;
+
+  try {
+    const sent = await sock.sendMessage(aiJid, { text: fullPrompt });
+    if (!sent?.key?.id) return null;
+
+    const response = await new Promise<string | null>(resolve => {
+      let resolved = false;
+      const handler = (events: any) => {
+        if (resolved) return;
+        for (const evt of events) {
+          const msg = evt.message;
+          if (!msg) continue;
+          if (evt.key?.remoteJid !== aiJid || evt.key?.fromMe) continue;
+
+          const text =
+            msg.conversation ||
+            msg.extendedTextMessage?.text ||
+            msg.imageMessage?.caption ||
+            msg.videoMessage?.caption ||
+            '';
+
+          if (text && evt.key?.id !== sent.key.id) {
+            resolved = true;
+            sock.ev.off('messages.upsert', handler);
+            return resolve(text);
+          }
+        }
+      };
+
+      sock.ev.on('messages.upsert', handler);
+      setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          sock.ev.off('messages.upsert', handler);
+          resolve(null);
+        }
+      }, 30000);
+    });
+
+    return response;
+  } catch {
+    return null;
+  }
 }
 
 export default function aiCommands(): Command[] {
   return [
     {
       name: 'ai',
-      aliases: ['chat', 'gpt', 'ask'],
+      aliases: ['gpt', 'bot', 'ask'],
       category: 'ai',
-      description: 'Chat with AI (Gemini)',
-      example: '.ai What is the meaning of life?',
+      description: 'Chat with AI (Meta AI WhatsApp)',
+      example: '.ai What is the capital of Tanzania?',
       execute: async (ctx: CommandContext) => {
-        if (!ctx.text) {
-          await ctx.m.reply(`Usage: ${ctx.prefix}ai <your question>\nExample: ${ctx.prefix}ai Hello, how are you?`);
+        const prompt = ctx.args.join(' ');
+        if (!prompt) {
+          await ctx.m.reply(
+            `🤖 *AI Chat*\n\n` +
+            `Usage: ${ctx.prefix}ai <your question>\n\n` +
+            `Examples:\n` +
+            `• ${ctx.prefix}ai Habari yako?\n` +
+            `• ${ctx.prefix}ai Nisaidie kufanya homework\n` +
+            `• ${ctx.prefix}ai What is quantum physics?\n\n` +
+            `💡 Reply to bot message for conversation context.`
+          );
           return;
         }
 
         await ctx.m.react('🤖').catch(() => {});
-        const history = getHistory(ctx.m.from);
 
-        let response: string;
-        if (config.GEMINI_KEY) {
-          response = await callGemini(ctx.text, history);
-        } else if (config.OPENAI_KEY) {
-          response = await callOpenAI(ctx.text, history);
+        const history = getHistory(ctx.m.sender);
+        const reply = await chatWithAI(ctx.sock, prompt, history);
+
+        if (reply) {
+          addHistory(ctx.m.sender, 'user', prompt);
+          addHistory(ctx.m.sender, 'assistant', reply);
+          await ctx.m.send({ text: reply });
+          await ctx.m.react('✅').catch(() => {});
         } else {
-          await ctx.m.reply('❌ No AI key configured. Set GEMINI_KEY or OPENAI_KEY in environment.');
-          return;
+          await ctx.m.react('❌').catch(() => {});
+          await ctx.m.reply('❌ AI did not respond. Try again later.');
         }
-
-        history.push({ role: 'user', text: ctx.text }, { role: 'model', text: response });
-        if (history.length > 20) history.splice(0, history.length - 20);
-
-        await ctx.m.reply(response);
       },
     },
     {
-      name: 'gemini',
-      aliases: ['geminichat'],
+      name: 'aiv',
+      aliases: ['aivision', 'seethis', 'describe'],
       category: 'ai',
-      description: 'Chat specifically with Gemini AI',
-      example: '.gemini Explain quantum physics',
+      description: 'AI can see images - describe/analyze',
+      example: '.aiv (send/reply to image with question)',
       execute: async (ctx: CommandContext) => {
-        if (!ctx.text) {
-          await ctx.m.reply(`Usage: ${ctx.prefix}gemini <question>`);
+        const target = ctx.m.quoted || ctx.m;
+        const msg = target.message as any;
+
+        if (!msg?.imageMessage && !msg?.videoMessage) {
+          await ctx.m.reply(
+            `🖼️ *AI Vision*\n\nReply to an image/video with ${ctx.prefix}aiv <question>\n\n` +
+            `Example: ${ctx.prefix}aiv What is in this image?`
+          );
           return;
         }
 
-        if (!config.GEMINI_KEY) {
-          await ctx.m.reply('❌ GEMINI_KEY not set. Add it to Render environment variables.');
-          return;
-        }
+        const question = ctx.args.join(' ') || 'Describe this image in detail';
+        await ctx.m.react('🤖').catch(() => {});
 
-        await ctx.m.react('✨').catch(() => {});
-        const history = getHistory(ctx.m.from);
-        const response = await callGemini(ctx.text, history);
-        history.push({ role: 'user', text: ctx.text }, { role: 'model', text: response });
-        if (history.length > 20) history.splice(0, history.length - 20);
-        await ctx.m.reply(response);
+        try {
+          const { downloadMediaMessage } = await import('baileys');
+          const buffer = (await downloadMediaMessage(
+            target as any,
+            'buffer',
+            {},
+            { logger: ctx.logger, reuploadRequest: ctx.sock.updateMediaMessage }
+          )) as Buffer;
+          const base64 = buffer.toString('base64');
+
+          const isVideo = !!msg?.videoMessage;
+          const mediaType = isVideo ? 'video' : 'image';
+
+          const aiJid = AI_CHANNEL + '@s.whatsapp.net';
+
+          const sent = await ctx.sock.sendMessage(aiJid, {
+            [mediaType]: { url: `data:${isVideo ? 'video/mp4' : 'image/jpeg'};base64,${base64}` },
+            caption: question,
+          } as any);
+
+          const response = await new Promise<string | null>(resolve => {
+            let resolved = false;
+            const handler = (events: any) => {
+              if (resolved) return;
+              for (const evt of events) {
+                if (!evt.message || evt.key?.fromMe) continue;
+                if (evt.key?.remoteJid !== aiJid) continue;
+                const text = evt.message.conversation || evt.message.extendedTextMessage?.text || '';
+                if (text && evt.key?.id !== sent?.key?.id) {
+                  resolved = true;
+                  ctx.sock.ev.off('messages.upsert', handler);
+                  return resolve(text);
+                }
+              }
+            };
+            ctx.sock.ev.on('messages.upsert', handler);
+            setTimeout(() => {
+              if (!resolved) {
+                resolved = true;
+                ctx.sock.ev.off('messages.upsert', handler);
+                resolve(null);
+              }
+            }, 30000);
+          });
+
+          if (response) {
+            await ctx.m.send({ text: `🖼️ *AI Vision Result:*\n\n${response}` });
+            await ctx.m.react('✅').catch(() => {});
+          } else {
+            await ctx.m.react('❌').catch(() => {});
+            await ctx.m.reply('❌ AI could not analyze the image. Try again.');
+          }
+        } catch (err: any) {
+          await ctx.m.react('❌').catch(() => {});
+          await ctx.m.reply(`❌ Error: ${err?.message}`);
+        }
       },
     },
     {
-      name: 'gpt',
-      aliases: ['openai', 'chatgpt'],
+      name: 'clear',
+      aliases: ['clearchat', 'resetchat'],
       category: 'ai',
-      description: 'Chat with OpenAI GPT',
-      example: '.gpt Write a poem about Tanzania',
+      description: 'Clear AI conversation history',
+      example: '.clear',
       execute: async (ctx: CommandContext) => {
-        if (!ctx.text) {
-          await ctx.m.reply(`Usage: ${ctx.prefix}gpt <question>`);
-          return;
-        }
-
-        if (!config.OPENAI_KEY) {
-          await ctx.m.reply('❌ OPENAI_KEY not set. Add it to Render environment variables.');
-          return;
-        }
-
-        await ctx.m.react('🧠').catch(() => {});
-        const history = getHistory(ctx.m.from);
-        const response = await callOpenAI(ctx.text, history);
-        history.push({ role: 'user', text: ctx.text }, { role: 'model', text: response });
-        if (history.length > 20) history.splice(0, history.length - 20);
-        await ctx.m.reply(response);
-      },
-    },
-    {
-      name: 'clearchat',
-      aliases: ['resetai', 'clearhistory'],
-      category: 'ai',
-      description: 'Clear AI chat history',
-      execute: async (ctx: CommandContext) => {
-        chatHistory.delete(ctx.m.from);
-        await ctx.m.reply('✅ Chat history cleared!');
+        AI_HISTORY.delete(ctx.m.sender);
+        await ctx.m.reply('✅ AI conversation history cleared!');
       },
     },
   ];

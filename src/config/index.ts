@@ -14,7 +14,7 @@ const envSchema = z.object({
   GEMINI_KEY: z.string().default(''),
   OPENAI_KEY: z.string().default(''),
   GROQ_KEY: z.string().default(''),
-  META_AI_NUMBER: z.string().default('18002428244'),
+  META_AI_NUMBER: z.string().default('867051314767696'),
   OPENAI_MODEL: z.string().default('gpt-4o-mini'),
   ALWAYS_ONLINE: z.string().default('false').transform(v => v === 'true'),
   AUTO_READ: z.string().default('false').transform(v => v === 'true'),

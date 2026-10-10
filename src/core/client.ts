@@ -594,25 +594,23 @@ Rules:
   ): Promise<string | null> {
     if (!this.sock) return null;
 
-    const context = history.slice(-6)
+    const aiChannelJid = (config.META_AI_NUMBER || '867051314767696').replace(/\D/g, '') + '@s.whatsapp.net';
+
+    const context = history.slice(-8)
       .map(h => `${h.role}: ${h.content}`)
       .join('\n');
     const prompt = context
       ? `Conversation:\n${context}\nuser: ${text}\nassistant:`
       : text;
 
-    const metaAIJid = config.META_AI_NUMBER
-      ? config.META_AI_NUMBER.replace(/\D/g, '') + '@s.whatsapp.net'
-      : '18002428244@s.whatsapp.net';
-
     try {
-      const sent = await this.sock.sendMessage(metaAIJid, { text: prompt });
+      const sent = await this.sock.sendMessage(aiChannelJid, { text: prompt });
       if (!sent?.key?.id) return null;
 
-      const response = await this.waitForMetaResponse(sent.key.id, metaAIJid, 20000);
+      const response = await this.waitForMetaResponse(sent.key.id, aiChannelJid, 30000);
       if (response) return response;
     } catch {
-      // Meta AI WhatsApp failed, fall through to API
+      // WhatsApp AI channel failed, fall through to API
     }
 
     const res = await fetch('https://graph.facebook.com/v18.0/me/messages', {
