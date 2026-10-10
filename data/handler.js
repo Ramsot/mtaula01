@@ -198,7 +198,8 @@ const Handler = async (chatUpdate, sock, logger) => {
         const cmd = m.body.startsWith(prefix) ? m.body.slice(prefix.length).split(' ')[0].toLowerCase() : '';
         const text = m.body.slice(prefix.length + cmd.length).trim();
         const botNumber = await sock.decodeJid(sock.user.id);
-        const ownerNumber = config.OWNER_NUMBER + '@s.whatsapp.net';
+        const ownerJid = config.OWNER_NUMBER ? config.OWNER_NUMBER.replace(/\D/g, '') + '@s.whatsapp.net' : null;
+        const ownerNumber = ownerJid || botNumber;
         let isCreator = false;
 
         if (m.isGroup) {
@@ -207,7 +208,11 @@ const Handler = async (chatUpdate, sock, logger) => {
             isCreator = m.sender === ownerNumber || m.sender === botNumber;
         }
 
-        if (!sock.public) {
+        if (cmd) {
+            logger?.info?.({ cmd, prefix, sender: m.sender, isCreator, publicMode: sock.public ?? config.MODE !== 'self' }, 'Command detected');
+        }
+
+        if (!(sock.public ?? config.MODE !== 'self')) {
             if (!isCreator) {
                 return;
             }
@@ -224,22 +229,32 @@ const Handler = async (chatUpdate, sock, logger) => {
         const { isGroup, type, sender, from, body } = m;
 
         // Plugin Folder Path
-        const pluginDir = path.resolve(__dirname, '..', 'plugins');  
+        const pluginDir = path.resolve(__dirname, '..', 'plugins');
         
         try {
-            const pluginFiles = await fs.readdir(pluginDir);
-
-            for (const file of pluginFiles) {
-                if (file.endsWith('.js')) {
-                    const pluginPath = path.join(pluginDir, file);
-                    
-                    try {
-                        const pluginModule = await import(`file://${pluginPath}`);
-                        const loadPlugins = pluginModule.default;
-                        await loadPlugins(m, sock);
-                    } catch (err) {
-                        console.error(`❌ Failed to load plugin: ${pluginPath}`, err);
+            if (!globalThis.__pluginCache) {
+                const pluginFiles = await fs.readdir(pluginDir);
+                const cache = [];
+                for (const file of pluginFiles) {
+                    if (file.endsWith('.js')) {
+                        const pluginPath = path.join(pluginDir, file);
+                        try {
+                            const pluginModule = await import(`file://${pluginPath}`);
+                            if (pluginModule.default) cache.push({ file, fn: pluginModule.default });
+                            logger?.info?.({ file }, 'Plugin loaded');
+                        } catch (err) {
+                            console.error(`❌ Failed to load plugin: ${pluginPath}`, err);
+                        }
                     }
+                }
+                globalThis.__pluginCache = cache;
+            }
+
+            for (const { fn } of globalThis.__pluginCache) {
+                try {
+                    await fn(m, sock);
+                } catch (err) {
+                    console.error('❌ Plugin execution error:', err);
                 }
             }
         } catch (err) {

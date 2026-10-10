@@ -111,14 +111,15 @@ app.post('/api/pair', async (req, res) => {
 });
 
 app.get('/api/status', (req, res) => {
-  const wsOpen = sock?.ws?.readyState === 1;
-  const state = wsOpen ? (registered ? 'connected' : 'waiting_for_pairing') : 'connecting';
+  const wsOpen = sock?.ws?.readyState === 1 || connectionState === 'open';
+  const state = wsOpen ? (registered ? 'connected' : 'waiting_for_pairing') : (registered ? 'reconnecting' : 'connecting');
   res.json({
     connected: wsOpen && registered,
     state,
     registered,
     lastError: lastConnectionError,
     user: sock?.user?.id || null,
+    mode: config.MODE,
     uptime: process.uptime()
   });
 });
@@ -126,6 +127,7 @@ app.get('/api/status', (req, res) => {
 let sock = null;
 let isConnecting = false;
 let registered = false;
+let connectionState = 'close';
 let lastConnectionError = null;
 let currentQr = null;
 let qrTimestamp = null;
@@ -208,6 +210,7 @@ async function connectToWhatsApp() {
       }
 
       if (connection === 'close') {
+        connectionState = 'close';
         const statusCode = lastDisconnect?.error?.output?.statusCode;
         lastConnectionError = lastDisconnect?.error?.message || `closed (code ${statusCode})`;
         const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
@@ -223,10 +226,12 @@ async function connectToWhatsApp() {
           process.exit(1);
         }
       } else if (connection === 'open') {
+        connectionState = 'open';
         logger.info({ jid: sock.user?.id }, 'Connected to WhatsApp');
         isConnecting = false;
         lastConnectionError = null;
         registered = true;
+        sock.public = config.MODE !== 'self';
         
         if (config.ALWAYS_ONLINE) {
           await sock.sendPresenceUpdate('available');
@@ -246,6 +251,8 @@ async function connectToWhatsApp() {
       if (type === 'notify') {
         for (const msg of messages) {
           try {
+            const preview = msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.message?.imageMessage?.caption || '';
+            logger.info({ from: msg.key.remoteJid, fromMe: msg.key.fromMe, type: Object.keys(msg.message || {})[0] }, `Message received: ${preview.slice(0, 80)}`);
             await Handler({ type: 'notify', messages: [msg] }, sock, logger);
           } catch (err) {
             logger.error({ err, msg: msg.key }, 'Error handling message');
