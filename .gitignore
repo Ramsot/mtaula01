@@ -10,6 +10,8 @@ node_modules/
 auth_info_baileys/
 *.creds
 *.json
+!package.json
+!package-lock.json
 
 # Logs
 logs/
