@@ -26,6 +26,8 @@ export class BotClient extends EventEmitter {
   private registry = new CommandRegistry();
   private antilinkChats = new Set<string>();
   private messageStore = new Map<string, any>();
+  private static MAX_STORE_SIZE = 10000;
+  private static MESSAGE_TTL = 48 * 60 * 60 * 1000;
 
   constructor() {
     super();
@@ -210,6 +212,12 @@ export class BotClient extends EventEmitter {
 
   private async handleMessage(raw: any): Promise<void> {
     if (!this.sock) return;
+
+    if ((globalThis as any).__antiDelete) {
+      this.storeMessage(raw);
+      this.checkProtocolMessage(raw).catch(() => {});
+    }
+
     const m = serialize(raw, this.sock);
 
     if (!m.message) return;
@@ -285,6 +293,161 @@ export class BotClient extends EventEmitter {
       logger.error({ err: err?.message, cmd }, 'Command execution failed');
       await m.reply(`Error: ${err?.message || 'Command failed'}`).catch(() => {});
     }
+  }
+
+  private storeMessage(raw: any): void {
+    try {
+      if (!raw.key?.id || !raw.message) return;
+      if (raw.message.protocolMessage) return;
+
+      const entry = {
+        ...raw,
+        _storedAt: Date.now(),
+      };
+
+      this.messageStore.set(raw.key.id, entry);
+
+      const now = Date.now();
+      for (const [key, data] of this.messageStore.entries()) {
+        if (now - data._storedAt > BotClient.MESSAGE_TTL) {
+          this.messageStore.delete(key);
+        }
+      }
+
+      if (this.messageStore.size > BotClient.MAX_STORE_SIZE) {
+        const oldestKey = Array.from(this.messageStore.keys())[0];
+        this.messageStore.delete(oldestKey);
+      }
+    } catch (err) {
+      logger.error({ err }, 'Failed to store message');
+    }
+  }
+
+  private async checkProtocolMessage(raw: any): Promise<void> {
+    if (!this.sock) return;
+
+    const proto = raw.message?.protocolMessage;
+    if (!proto) return;
+
+    const isDelete =
+      proto.type === 0 ||
+      proto.type === 'REVOKE';
+
+    if (!isDelete) return;
+
+    const deletedKey = proto.key?.id;
+    if (!deletedKey) return;
+
+    const original = this.messageStore.get(deletedKey);
+    if (!original) return;
+
+    const botJid = decodeJid(this.sock.user?.id || '');
+    const ownerJid = config.OWNER_NUMBER
+      ? config.OWNER_NUMBER.replace(/\D/g, '') + '@s.whatsapp.net'
+      : botJid;
+
+    if (original.key?.fromMe) return;
+
+    const sender = original.key?.participant || original.key?.remoteJid;
+    const chat = original.key?.remoteJid;
+    const isGroup = chat?.endsWith('@g.us');
+    const deletedBy = raw.key?.participant || raw.key?.remoteJid;
+
+    const msgBody =
+      original.message?.conversation ||
+      original.message?.extendedTextMessage?.text ||
+      original.message?.imageMessage?.caption ||
+      original.message?.videoMessage?.caption ||
+      '';
+
+    let header = `🗑️ *Anti-Delete Alert*\n\n`;
+    header += `👤 *Sender:* @${(sender || '').split('@')[0]}\n`;
+    header += `💬 *Chat:* ${isGroup ? 'Group' : 'Private'} (${chat})\n`;
+    if (isGroup) {
+      header += `🗑️ *Deleted by:* @${(deletedBy || '').split('@')[0]}\n`;
+    }
+    header += `⏰ *Time:* ${new Date().toLocaleString()}\n`;
+
+    const mentions = [sender, deletedBy].filter(Boolean);
+
+    await this.sock.sendMessage(ownerJid, {
+      text: header,
+      mentions,
+    });
+
+    if (msgBody) {
+      await this.sock.sendMessage(ownerJid, {
+        text: `📝 *Content:* ${msgBody.slice(0, 3000)}`,
+        mentions: [sender],
+      });
+    }
+
+    const hasMedia =
+      original.message?.imageMessage ||
+      original.message?.videoMessage ||
+      original.message?.audioMessage ||
+      original.message?.documentMessage ||
+      original.message?.stickerMessage;
+
+    if (hasMedia) {
+      try {
+        const { downloadMediaMessage } = await import('baileys');
+        const buffer = (await downloadMediaMessage(
+          original,
+          'buffer',
+          {},
+          { logger, reuploadRequest: this.sock.updateMediaMessage }
+        )) as Buffer;
+
+        if (buffer && buffer.length > 0) {
+          const isImage = !!original.message?.imageMessage;
+          const isVideo = !!original.message?.videoMessage;
+          const isAudio = !!original.message?.audioMessage;
+          const isSticker = !!original.message?.stickerMessage;
+
+          if (isImage) {
+            await this.sock.sendMessage(ownerJid, {
+              image: buffer,
+              caption: '🖼️ *Deleted Image*',
+              mentions: [sender],
+            });
+          } else if (isVideo) {
+            await this.sock.sendMessage(ownerJid, {
+              video: buffer,
+              caption: '🎬 *Deleted Video*',
+              mentions: [sender],
+            });
+          } else if (isAudio) {
+            await this.sock.sendMessage(ownerJid, {
+              audio: buffer,
+              mimetype: 'audio/mpeg',
+              caption: '🎤 *Deleted Voice Note*',
+            });
+          } else if (isSticker) {
+            await this.sock.sendMessage(ownerJid, {
+              sticker: buffer,
+            });
+          } else {
+            const docName = original.message?.documentMessage?.fileName || 'document';
+            const docMime = original.message?.documentMessage?.mimetype || 'application/octet-stream';
+            await this.sock.sendMessage(ownerJid, {
+              document: buffer,
+              fileName: docName,
+              mimetype: docMime,
+              caption: '📄 *Deleted Document*',
+              mentions: [sender],
+            });
+          }
+
+          logger.info({ deletedKey, from: sender }, 'Anti-delete: media forwarded');
+        }
+      } catch (err: any) {
+        logger.error({ err: err?.message }, 'Anti-delete: media download failed');
+      }
+    }
+
+    this.messageStore.delete(deletedKey);
+    logger.info({ deletedKey, from: sender, isGroup }, 'Anti-delete: message forwarded to owner');
   }
 
   private async handleViewOnce(m: SerializedMessage): Promise<void> {
