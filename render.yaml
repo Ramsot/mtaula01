@@ -5487,7 +5487,7 @@ services:
     runtime: docker
     dockerfilePath: ./Dockerfile
     plan: free
-    repo: https://github.com/yourusername/mtaula-01
+    repo: https://github.com/Ramsot/mtaula01
     branch: main
     autoDeploy: true
     healthCheckPath: /health
