@@ -1,0 +1,15 @@
+name: mtaula-01
+services:
+  - name: mtaula-01-service
+    type: web
+    ports:
+      - 5000
+    routes:
+      - path: "/"
+    build:
+      type: docker
+      dockerfile: ./Dockerfile
+    regions:
+      - fra
+      - sin
+      
