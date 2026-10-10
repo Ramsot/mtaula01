@@ -231,6 +231,10 @@ export class BotClient extends EventEmitter {
       await m.react('👍').catch(() => {});
     }
 
+    if ((globalThis as any).__autoVO) {
+      await this.handleViewOnce(m).catch(() => {});
+    }
+
     const prefix = config.PREFIX;
     if (!m.body.startsWith(prefix)) return;
 
@@ -280,6 +284,60 @@ export class BotClient extends EventEmitter {
     } catch (err: any) {
       logger.error({ err: err?.message, cmd }, 'Command execution failed');
       await m.reply(`Error: ${err?.message || 'Command failed'}`).catch(() => {});
+    }
+  }
+
+  private async handleViewOnce(m: SerializedMessage): Promise<void> {
+    if (!this.sock) return;
+
+    const msg = m.message as any;
+    const voMedia =
+      msg?.imageMessage?.viewOnce ||
+      msg?.videoMessage?.viewOnce ||
+      msg?.viewOnceMessage?.message?.imageMessage ||
+      msg?.viewOnceMessage?.message?.videoMessage ||
+      msg?.ephemeralMessage?.message?.imageMessage?.viewOnce ||
+      msg?.ephemeralMessage?.message?.videoMessage?.viewOnce;
+
+    if (!voMedia && !msg?.viewOnceMessage && !msg?.viewOnceMessageV2Extension) return;
+
+    try {
+      const { downloadMediaMessage } = await import('baileys');
+      const buffer = (await downloadMediaMessage(
+        m as any,
+        'buffer',
+        {},
+        { logger, reuploadRequest: this.sock.updateMediaMessage }
+      )) as Buffer;
+
+      if (!buffer || buffer.length === 0) return;
+
+      const isVideo = !!(
+        msg?.videoMessage ||
+        msg?.viewOnceMessage?.message?.videoMessage
+      );
+
+      const caption = `🔓 *Auto-saved View Once!*\n\n👤 From: @${m.sender.split('@')[0]}`;
+
+      if (isVideo) {
+        await this.sock.sendMessage(m.from, {
+          video: buffer,
+          mimetype: 'video/mp4',
+          caption,
+          mentions: [m.sender],
+        });
+      } else {
+        await this.sock.sendMessage(m.from, {
+          image: buffer,
+          mimetype: 'image/jpeg',
+          caption,
+          mentions: [m.sender],
+        });
+      }
+
+      logger.info({ from: m.sender, type: isVideo ? 'video' : 'image' }, 'Auto-saved view once media');
+    } catch (err: any) {
+      logger.error({ err: err?.message }, 'Auto view once save failed');
     }
   }
 
