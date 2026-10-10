@@ -1,27 +1,26 @@
-FROM node:20-bookworm
+FROM node:20-bookworm-slim
 
-# Install system dependencies
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-      ffmpeg \
-      imagemagick \
-      webp && \
-    rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y \
+  ffmpeg \
+  imagemagick \
+  webp \
+  fonts-noto-color-emoji \
+  && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
 WORKDIR /app
 
-# Copy package files first for better caching
-COPY package*.json ./
+COPY package.json package-lock.json* ./
+RUN npm install --legacy-peer-deps
 
-# Install dependencies (fix peer conflict)
-RUN npm install --legacy-peer-deps --no-audit --no-fund
+COPY tsconfig.json ./
+COPY src ./src
+COPY public ./public
 
-# Copy the rest of the app
-COPY . .
+RUN npm run build || true
 
-# Expose app port
+ENV NODE_ENV=production
+ENV PORT=3000
+
 EXPOSE 3000
 
-# Start the app
-CMD ["npm", "start"]
+CMD ["node", "dist/main.js"]
