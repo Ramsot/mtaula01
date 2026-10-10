@@ -27,14 +27,61 @@ function addHistory(jid: string, role: string, content: string) {
   AI_HISTORY.set(jid, h);
 }
 
-async function callGemini(prompt: string, history: Array<{ role: string; content: string }>): Promise<string> {
-  if (!config.GEMINI_KEY) {
-    throw new Error(
-      'GEMINI_KEY not set!\n\n' +
-      'Get FREE key at: https://aistudio.google.com/apikey\n\n' +
-      'Then add to Render Environment:\nGEMINI_KEY=your_key_here'
-    );
+async function callMetaAI(prompt: string, history: Array<{ role: string; content: string }>): Promise<string> {
+  if (!config.META_AI_TOKEN) throw new Error('META_AI_TOKEN not set');
+
+  const context = history.slice(-8)
+    .map(h => `${h.role}: ${h.content}`)
+    .join('\n');
+  const fullPrompt = context
+    ? `Conversation:\n${context}\nuser: ${prompt}\nassistant:`
+    : prompt;
+
+  const res = await fetch('https://graph.facebook.com/v19.0/me/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${config.META_AI_TOKEN}`,
+    },
+    body: JSON.stringify({
+      recipient: 'me',
+      message: { text: fullPrompt },
+    }),
+    signal: AbortSignal.timeout(30000),
+  });
+
+  if (res.ok) {
+    const data: any = await res.json();
+    if (data?.message?.text) return data.message.text;
+    if (data?.text) return data.text;
+    if (data?.response) return data.response;
   }
+
+  const aiRes = await fetch('https://www.meta.ai/api/graphql', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${config.META_AI_TOKEN}`,
+      'User-Agent': 'WhatsApp/2.24.1.78',
+    },
+    body: JSON.stringify({
+      query: `query AIChat($prompt: String!) { aiChat(prompt: $prompt) { response } }`,
+      variables: { prompt: fullPrompt },
+    }),
+    signal: AbortSignal.timeout(30000),
+  });
+
+  if (aiRes.ok) {
+    const data: any = await aiRes.json();
+    const response = data?.data?.aiChat?.response || data?.response || data?.text;
+    if (response) return response;
+  }
+
+  throw new Error('Meta AI failed');
+}
+
+async function callGemini(prompt: string, history: Array<{ role: string; content: string }>): Promise<string> {
+  if (!config.GEMINI_KEY) throw new Error('GEMINI_KEY not set');
 
   const contents = [
     ...history.slice(-10).map(h => ({
@@ -58,13 +105,7 @@ async function callGemini(prompt: string, history: Array<{ role: string; content
     }
   );
 
-  if (!response.ok) {
-    const err = await response.text().catch(() => '');
-    if (response.status === 403) throw new Error('GEMINI_KEY is invalid!');
-    if (response.status === 429) throw new Error('Rate limited! Try again in a minute.');
-    throw new Error(`Gemini error ${response.status}: ${err.slice(0, 100)}`);
-  }
-
+  if (!response.ok) throw new Error(`Gemini error ${response.status}`);
   const data: any = await response.json();
   return data.candidates?.[0]?.content?.parts?.[0]?.text || 'No response';
 }
@@ -99,6 +140,7 @@ async function callGroq(prompt: string, history: Array<{ role: string; content: 
 
 async function callAI(prompt: string, history: Array<{ role: string; content: string }>): Promise<string> {
   const engines = [
+    () => callMetaAI(prompt, history),
     () => callGemini(prompt, history),
     () => callGroq(prompt, history),
   ];

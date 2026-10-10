@@ -83,7 +83,7 @@ export interface BotConfig {
   GEMINI_KEY: string;
   OPENAI_KEY: string;
   GROQ_KEY: string;
-  META_AI_NUMBER: string;
+  META_AI_TOKEN: string;
   OPENAI_MODEL: string;
   ALWAYS_ONLINE: boolean;
   AUTO_READ: boolean;

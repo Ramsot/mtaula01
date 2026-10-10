@@ -561,6 +561,7 @@ Rules:
     m?: SerializedMessage
   ): Promise<string | null> {
     const engines: Array<() => Promise<string | null>> = [
+      () => this.callMetaAI(userText, history),
       () => this.callGemini(userText, history),
       () => this.callGroq(userText, history),
       () => this.callOpenAI(userText, history),
@@ -574,6 +575,62 @@ Rules:
         continue;
       }
     }
+    return null;
+  }
+
+  private async callMetaAI(
+    text: string,
+    history: Array<{ role: string; content: string }>
+  ): Promise<string | null> {
+    if (!config.META_AI_TOKEN) return null;
+
+    const context = history.slice(-8)
+      .map(h => `${h.role}: ${h.content}`)
+      .join('\n');
+    const prompt = context
+      ? `Conversation:\n${context}\nuser: ${text}\nassistant:`
+      : text;
+
+    const res = await fetch('https://graph.facebook.com/v19.0/me/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.META_AI_TOKEN}`,
+      },
+      body: JSON.stringify({
+        recipient: 'me',
+        message: { text: prompt },
+      }),
+      signal: AbortSignal.timeout(30000),
+    }).catch(() => null);
+
+    if (res?.ok) {
+      const data: any = await res.json().catch(() => null);
+      if (data?.message?.text) return data.message.text;
+      if (data?.text) return data.text;
+      if (data?.response) return data.response;
+    }
+
+    const aiRes = await fetch('https://www.meta.ai/api/graphql', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.META_AI_TOKEN}`,
+        'User-Agent': 'WhatsApp/2.24.1.78',
+      },
+      body: JSON.stringify({
+        query: `query AIChat($prompt: String!) { aiChat(prompt: $prompt) { response } }`,
+        variables: { prompt },
+      }),
+      signal: AbortSignal.timeout(30000),
+    }).catch(() => null);
+
+    if (aiRes?.ok) {
+      const data: any = await aiRes.json().catch(() => null);
+      const response = data?.data?.aiChat?.response || data?.response || data?.text;
+      if (response) return response;
+    }
+
     return null;
   }
 
