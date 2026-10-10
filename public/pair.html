@@ -209,7 +209,11 @@
 
     <div class="footer">
       <p>Mtaula 01 WhatsApp Bot &copy; 2025</p>
-      <p><a href="/health" target="_blank">Health Check</a> | <a href="/api/status" target="_blank">API Status</a></p>
+      <p>
+        <a href="/health" target="_blank">Health</a> | 
+        <a href="/api/status" target="_blank">Status</a> | 
+        <button id="resetBtn" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:13px;text-decoration:underline;">Reset Session</button>
+      </p>
     </div>
   </div>
 
@@ -370,6 +374,17 @@
     });
 
     phoneInput.addEventListener('input', (e) => { e.target.value = e.target.value.replace(/\D/g, ''); });
+
+    document.getElementById('resetBtn').addEventListener('click', async () => {
+      if (!confirm('Clear the WhatsApp session and re-pair? You will need to scan QR again.')) return;
+      try {
+        await fetch('/api/reset', { method: 'POST' });
+        alert('Session cleared. Refreshing...');
+        setTimeout(() => location.reload(), 2000);
+      } catch (e) {
+        alert('Reset failed. Try again.');
+      }
+    });
 
     checkStatus();
     loadQrCode();

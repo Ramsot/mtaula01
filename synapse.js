@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import path from 'path';
+import fs from 'fs/promises';
 import { fileURLToPath } from 'url';
 import pino from 'pino';
 import qrcode from 'qrcode';
@@ -122,6 +123,32 @@ app.get('/api/status', (req, res) => {
     mode: config.MODE,
     uptime: process.uptime()
   });
+});
+
+app.post('/api/reset', async (req, res) => {
+  try {
+    logger.warn('Session reset requested via web');
+    res.json({ success: true, message: 'Session cleared. Re-pair via QR or pairing code.' });
+
+    if (sock) {
+      try { sock.end?.(undefined); } catch {}
+      sock = null;
+    }
+    isConnecting = false;
+    registered = false;
+    connectionState = 'close';
+    currentQr = null;
+    qrTimestamp = null;
+    lastConnectionError = null;
+
+    try { await fs.rm(AUTH_DIR, { recursive: true, force: true }); } catch {}
+    await fs.mkdir(AUTH_DIR, { recursive: true }).catch(() => {});
+
+    setTimeout(() => { connectToWhatsApp().catch(() => {}); }, 1500);
+  } catch (error) {
+    logger.error({ err: error }, 'Session reset failed');
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 let sock = null;
