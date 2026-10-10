@@ -36,42 +36,25 @@
       color: #666;
       margin-top: 8px;
     }
-    .tab-buttons {
+    .status {
       display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
       margin-bottom: 24px;
-      border-radius: 10px;
-      background: #f3f4f6;
-      padding: 4px;
-    }
-    .tab-btn {
-      flex: 1;
       padding: 12px;
-      border: none;
-      background: transparent;
-      font-size: 14px;
-      font-weight: 600;
-      color: #666;
-      cursor: pointer;
       border-radius: 8px;
-      transition: all 0.2s;
+      font-size: 14px;
     }
-    .tab-btn.active {
-      background: white;
-      color: #667eea;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    }
-    .tab-content {
-      display: none;
-    }
-    .tab-content.active {
-      display: block;
-      animation: fadeIn 0.2s ease;
-    }
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(8px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-    .qr-container {
+    .status.ready { background: #f0fdf4; color: #166534; }
+    .status.connecting { background: #fef3c7; color: #92400e; }
+    .status.disconnected { background: #fef2f2; color: #991b1b; }
+    .status-dot { width: 10px; height: 10px; border-radius: 50%; }
+    .status.ready .status-dot { background: #22c55e; }
+    .status.connecting .status-dot { background: #f59e0b; }
+    .status.disconnected .status-dot { background: #ef4444; }
+
+    .qr-section {
       text-align: center;
       margin-bottom: 24px;
     }
@@ -82,24 +65,16 @@
       background: white;
       padding: 16px;
     }
-    .qr-loading {
-      padding: 40px;
-      color: #666;
-    }
-    .qr-error {
-      padding: 20px;
-      background: #fef2f2;
-      border: 1px solid #fca5a5;
-      border-radius: 10px;
-      color: #991b1b;
-    }
+    .qr-loading { padding: 40px; color: #666; }
+    .qr-error { padding: 20px; background: #fef2f2; border: 1px solid #fca5a5; border-radius: 10px; color: #991b1b; }
+    .qr-success { padding: 20px; background: #f0fdf4; border: 1px solid #86efac; border-radius: 10px; color: #166534; }
     .qr-instructions {
       font-size: 14px;
       color: #666;
       line-height: 1.6;
       margin-top: 16px;
     }
-    .qr-instructions ol { margin-left: 20px; }
+    .qr-instructions ol { margin-left: 20px; text-align: left; }
     .qr-instructions li { margin-bottom: 8px; }
     .refresh-qr {
       margin-top: 16px;
@@ -111,148 +86,67 @@
       cursor: pointer;
       font-weight: 500;
     }
-    .refresh-qr:hover { background: #5568d3; }
+    .refresh-qr:hover:not(:disabled) { background: #5568d3; }
     .refresh-qr:disabled { opacity: 0.6; cursor: not-allowed; }
 
-    .form-group {
-      margin-bottom: 20px;
-    }
-    label {
-      display: block;
-      margin-bottom: 8px;
-      font-weight: 500;
-      color: #333;
-    }
-    input[type="tel"] {
-      width: 100%;
-      padding: 14px 16px;
-      border: 2px solid #e1e5e9;
-      border-radius: 10px;
-      font-size: 16px;
-      transition: border-color 0.2s, box-shadow 0.2s;
-    }
-    input[type="tel"]:focus {
-      outline: none;
-      border-color: #667eea;
-      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
-    }
-    .btn {
-      width: 100%;
-      padding: 14px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      border: none;
-      border-radius: 10px;
-      font-size: 16px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: transform 0.1s, box-shadow 0.2s;
-    }
-    .btn:hover:not(:disabled) {
-      transform: translateY(-1px);
-      box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
-    }
-    .btn:active:not(:disabled) {
-      transform: translateY(0);
-    }
-    .btn:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
-    .result {
-      margin-top: 24px;
-      padding: 20px;
-      border-radius: 10px;
-      display: none;
-    }
-    .result.success {
-      display: block;
-      background: #f0fdf4;
-      border: 1px solid #86efac;
-    }
-    .result.error {
-      display: block;
-      background: #fef2f2;
-      border: 1px solid #fca5a5;
-    }
-    .result h3 {
-      margin-bottom: 12px;
-      font-size: 18px;
-    }
-    .result.success h3 { color: #166534; }
-    .result.error h3 { color: #991b1b; }
-    .code {
-      font-family: 'Monaco', 'Menlo', monospace;
-      font-size: 32px;
-      font-weight: 700;
-      letter-spacing: 4px;
-      text-align: center;
-      padding: 16px;
-      background: white;
-      border-radius: 8px;
-      color: #667eea;
-      margin: 16px 0;
-      word-break: break-all;
-    }
-    .instructions {
-      font-size: 14px;
-      color: #666;
-      line-height: 1.6;
-    }
-    .instructions ol { margin-left: 20px; }
-    .instructions li { margin-bottom: 8px; }
-    .loading {
-      display: none;
-      text-align: center;
-      padding: 20px;
-    }
-    .loading.show { display: block; }
-    .spinner {
-      width: 40px;
-      height: 40px;
-      border: 3px solid #e1e5e9;
-      border-top-color: #667eea;
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
-      margin: 0 auto 16px;
-    }
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
-    .footer {
-      text-align: center;
-      margin-top: 30px;
+    .or-divider {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 24px 0;
       color: #999;
       font-size: 13px;
     }
+    .or-divider::before,
+    .or-divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: #e5e7eb;
+    }
+
+    .form-group { margin-bottom: 20px; }
+    label { display: block; margin-bottom: 8px; font-weight: 500; color: #333; }
+    input[type="tel"] {
+      width: 100%; padding: 14px 16px; border: 2px solid #e1e5e9; border-radius: 10px;
+      font-size: 16px; transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    input[type="tel"]:focus { outline: none; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15); }
+    .btn {
+      width: 100%; padding: 14px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white; border: none; border-radius: 10px; font-size: 16px; font-weight: 600;
+      cursor: pointer; transition: transform 0.1s, box-shadow 0.2s;
+    }
+    .btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4); }
+    .btn:active:not(:disabled) { transform: translateY(0); }
+    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    .result { margin-top: 24px; padding: 20px; border-radius: 10px; display: none; }
+    .result.success { display: block; background: #f0fdf4; border: 1px solid #86efac; }
+    .result.error { display: block; background: #fef2f2; border: 1px solid #fca5a5; }
+    .result h3 { margin-bottom: 12px; font-size: 18px; }
+    .result.success h3 { color: #166534; }
+    .result.error h3 { color: #991b1b; }
+    .code {
+      font-family: 'Monaco', 'Menlo', monospace; font-size: 32px; font-weight: 700;
+      letter-spacing: 4px; text-align: center; padding: 16px; background: white;
+      border-radius: 8px; color: #667eea; margin: 16px 0; word-break: break-all;
+    }
+    .instructions { font-size: 14px; color: #666; line-height: 1.6; }
+    .instructions ol { margin-left: 20px; }
+    .instructions li { margin-bottom: 8px; }
+
+    .loading { display: none; text-align: center; padding: 20px; }
+    .loading.show { display: block; }
+    .spinner {
+      width: 40px; height: 40px; border: 3px solid #e1e5e9; border-top-color: #667eea;
+      border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .footer { text-align: center; margin-top: 30px; color: #999; font-size: 13px; }
     .footer a { color: #667eea; text-decoration: none; }
     .footer a:hover { text-decoration: underline; }
-    .status {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      margin-bottom: 20px;
-      padding: 12px;
-      border-radius: 8px;
-      font-size: 14px;
-    }
-    .status.connected {
-      background: #f0fdf4;
-      color: #166534;
-    }
-    .status.disconnected {
-      background: #fef2f2;
-      color: #991b1b;
-    }
-    .status-dot {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-    }
-    .status.connected .status-dot { background: #22c55e; }
-    .status.disconnected .status-dot { background: #ef4444; }
-    .status.connecting .status-dot { background: #f59e0b; }
   </style>
 </head>
 <body>
@@ -267,22 +161,16 @@
       <span id="statusText">Checking bot status...</span>
     </div>
 
-    <div class="tab-buttons">
-      <button type="button" class="tab-btn active" data-tab="qr">📷 QR Code</button>
-      <button type="button" class="tab-btn" data-tab="pair">🔐 Pairing Code</button>
-    </div>
-
-    <div id="qrTab" class="tab-content active">
-      <div class="qr-container">
-        <div id="qrLoading" class="qr-loading">
-          <div class="spinner" style="margin: 0 auto 16px;"></div>
-          <p>Loading QR code...</p>
-        </div>
-        <div id="qrError" class="qr-error" style="display: none;"></div>
-        <img id="qrImage" class="qr-code-img" style="display: none;" alt="WhatsApp QR Code">
+    <div class="qr-section">
+      <div id="qrLoading" class="qr-loading">
+        <div class="spinner" style="margin: 0 auto 16px;"></div>
+        <p>Loading QR code...</p>
       </div>
+      <div id="qrError" class="qr-error" style="display: none;"></div>
+      <div id="qrSuccess" class="qr-success" style="display: none;"></div>
+      <img id="qrImage" class="qr-code-img" style="display: none;" alt="WhatsApp QR Code">
       <div id="qrInstructions" class="qr-instructions" style="display: none;">
-        <p><strong>How to link with QR:</strong></p>
+        <p><strong>How to link:</strong></p>
         <ol>
           <li>Open WhatsApp on your phone</li>
           <li>Go to <strong>Settings</strong> → <strong>Linked Devices</strong></li>
@@ -291,45 +179,33 @@
           <li>Wait for connection confirmation</li>
         </ol>
         <p style="margin-top: 12px; color: #f59e0b; font-weight: 500;">
-          QR code refreshes automatically. If expired, click "Refresh QR".
+          QR code auto-refreshes. If expired, click "Refresh QR".
         </p>
       </div>
       <button id="refreshQr" class="refresh-qr" style="display: none;">🔄 Refresh QR Code</button>
     </div>
 
-    <div id="pairTab" class="tab-content">
-      <form id="pairForm" class="form-group">
-        <label for="phoneNumber">Phone Number</label>
-        <input 
-          type="tel" 
-          id="phoneNumber" 
-          name="phoneNumber" 
-          placeholder="2547XXXXXXXX"
-          required
-          autocomplete="tel"
-          inputmode="tel"
-        >
-        <button type="submit" class="btn" id="submitBtn">Get Pairing Code</button>
-      </form>
+    <div class="or-divider">OR</div>
 
-      <div id="loading" class="loading">
-        <div class="spinner"></div>
-        <p>Generating pairing code...</p>
-      </div>
+    <form id="pairForm" class="form-group" style="display: none;">
+      <label for="phoneNumber">Phone Number (for pairing code)</label>
+      <input 
+        type="tel" 
+        id="phoneNumber" 
+        name="phoneNumber" 
+        placeholder="2547XXXXXXXX"
+        autocomplete="tel"
+        inputmode="tel"
+      >
+      <button type="submit" class="btn" id="submitBtn">Get Pairing Code</button>
+    </form>
 
-      <div id="pairResult" class="result"></div>
-
-      <div class="qr-instructions" style="margin-top: 16px;">
-        <p><strong>How to link with pairing code:</strong></p>
-        <ol>
-          <li>Open WhatsApp on your phone</li>
-          <li>Go to <strong>Settings</strong> → <strong>Linked Devices</strong></li>
-          <li>Tap <strong>Link with Phone Number</strong></li>
-          <li>Enter the pairing code</li>
-          <li>Wait for connection confirmation</li>
-        </ol>
-      </div>
+    <div id="loading" class="loading" style="display: none;">
+      <div class="spinner"></div>
+      <p>Generating pairing code...</p>
     </div>
+
+    <div id="pairResult" class="result"></div>
 
     <div class="footer">
       <p>Mtaula 01 WhatsApp Bot &copy; 2025</p>
@@ -338,30 +214,17 @@
   </div>
 
   <script>
-    const tabBtns = document.querySelectorAll('.tab-btn');
-    const tabContents = document.querySelectorAll('.tab-content');
-    
-    tabBtns.forEach(btn => {
-      btn.addEventListener('click', () => {
-        tabBtns.forEach(b => b.classList.remove('active'));
-        tabContents.forEach(c => c.classList.remove('active'));
-        btn.classList.add('active');
-        document.getElementById(btn.dataset.tab + 'Tab').classList.add('active');
-      });
-    });
-
     const qrLoading = document.getElementById('qrLoading');
     const qrError = document.getElementById('qrError');
+    const qrSuccess = document.getElementById('qrSuccess');
     const qrImage = document.getElementById('qrImage');
     const qrInstructions = document.getElementById('qrInstructions');
     const refreshQrBtn = document.getElementById('refreshQr');
-    
     const pairForm = document.getElementById('pairForm');
     const phoneInput = document.getElementById('phoneNumber');
     const submitBtn = document.getElementById('submitBtn');
     const loading = document.getElementById('loading');
     const pairResult = document.getElementById('pairResult');
-    
     const statusEl = document.getElementById('status');
     const statusText = document.getElementById('statusText');
 
@@ -376,17 +239,23 @@
       try {
         const res = await fetch('/api/status');
         const data = await res.json();
-        const ready = data.state === 'connected' || data.state === 'waiting_for_pairing';
         
         if (data.state === 'connecting') {
           statusEl.className = 'status connecting';
+        } else if (data.state === 'waiting_for_pairing' || data.connected) {
+          statusEl.className = 'status ready';
         } else {
-          statusEl.className = 'status ' + (ready ? 'connected' : 'disconnected');
+          statusEl.className = 'status disconnected';
         }
         
         statusText.textContent = data.connected 
           ? `Bot connected as ${data.user?.split('@')[0] || 'Unknown'}`
-          : (STATUS_LABELS[data.state] || 'Bot not connected - waiting for pairing...');
+          : (STATUS_LABELS[data.state] || 'Bot not connected');
+        
+        // Show pairing form only when QR not available (bot connected or no QR)
+        if (data.state === 'waiting_for_pairing') {
+          pairForm.style.display = 'block';
+        }
       } catch (e) {
         statusEl.className = 'status disconnected';
         statusText.textContent = 'Unable to check bot status';
@@ -399,15 +268,20 @@
         if (res.ok) {
           qrLoading.style.display = 'none';
           qrError.style.display = 'none';
+          qrSuccess.style.display = 'none';
           qrImage.src = URL.createObjectURL(await res.blob());
           qrImage.style.display = 'block';
           qrInstructions.style.display = 'block';
           refreshQrBtn.style.display = 'block';
+          pairForm.style.display = 'block'; // Show both methods
         } else if (res.status === 404) {
           qrLoading.style.display = 'none';
-          qrError.style.display = 'block';
-          qrError.textContent = 'Bot is already connected! No QR code needed.';
+          qrError.style.display = 'none';
+          qrSuccess.style.display = 'block';
+          qrSuccess.innerHTML = '<strong>✅ Bot is already connected!</strong> No QR code needed.';
           refreshQrBtn.style.display = 'none';
+          qrImage.style.display = 'none';
+          qrInstructions.style.display = 'none';
         } else {
           throw new Error('Failed to load QR');
         }
@@ -416,38 +290,33 @@
         qrError.style.display = 'block';
         qrError.textContent = 'Failed to load QR code. Bot may still be starting...';
         refreshQrBtn.style.display = 'block';
+        qrImage.style.display = 'none';
+        qrInstructions.style.display = 'none';
       }
     }
 
     function startQrPolling() {
       if (qrPollInterval) clearInterval(qrPollInterval);
-      qrPollInterval = setInterval(() => {
-        loadQrCode();
-      }, 15000);
+      qrPollInterval = setInterval(() => { loadQrCode(); }, 15000);
     }
 
     refreshQrBtn.addEventListener('click', () => {
       qrLoading.style.display = 'block';
       qrError.style.display = 'none';
+      qrSuccess.style.display = 'none';
       qrImage.style.display = 'none';
       qrInstructions.style.display = 'none';
       refreshQrBtn.style.display = 'none';
       loadQrCode();
     });
 
-    checkStatus();
-    loadQrCode();
-    startQrPolling();
-    setInterval(checkStatus, 10000);
-
     pairForm.addEventListener('submit', async (e) => {
       e.preventDefault();
-      
       const phoneNumber = phoneInput.value.trim();
       if (!phoneNumber) return;
 
       submitBtn.disabled = true;
-      loading.classList.add('show');
+      loading.style.display = 'block';
       pairResult.style.display = 'none';
       pairResult.className = 'result';
 
@@ -486,29 +355,26 @@
           `;
         } else {
           pairResult.className = 'result error';
-          pairResult.innerHTML = `
-            <h3>❌ Error</h3>
-            <p>${data.error || 'Failed to generate pairing code'}</p>
-          `;
+          pairResult.innerHTML = `<h3>❌ Error</h3><p>${data.error || 'Failed to generate pairing code'}</p>`;
         }
         pairResult.style.display = 'block';
       } catch (error) {
         pairResult.className = 'result error';
-        pairResult.innerHTML = `
-          <h3>❌ Error</h3>
-          <p>Network error. Please try again.</p>
-        `;
+        pairResult.innerHTML = `<h3>❌ Error</h3><p>Network error. Please try again.</p>`;
         pairResult.style.display = 'block';
       } finally {
         submitBtn.disabled = false;
-        loading.classList.remove('show');
+        loading.style.display = 'none';
         checkStatus();
       }
     });
 
-    phoneInput.addEventListener('input', (e) => {
-      e.target.value = e.target.value.replace(/\D/g, '');
-    });
+    phoneInput.addEventListener('input', (e) => { e.target.value = e.target.value.replace(/\D/g, ''); });
+
+    checkStatus();
+    loadQrCode();
+    startQrPolling();
+    setInterval(checkStatus, 10000);
   </script>
 </body>
 </html>
