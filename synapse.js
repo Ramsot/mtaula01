@@ -1,9 +1,14 @@
 import 'dotenv/config';
 import express from 'express';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import pino from 'pino';
 import { makeWASocket, useMultiFileAuthState, DisconnectReason, makeCacheableSignalKeyStore, Browsers, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
 import config from './config.js';
 import { Handler } from './data/index.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const logger = pino({ level: config.DEBUG_MODE ? 'debug' : 'info' });
 const app = express();
@@ -11,6 +16,7 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/health', (req, res) => {
   res.status(200).json({ 
@@ -27,6 +33,51 @@ app.get('/', (req, res) => {
     version: '10.8.1',
     status: 'running',
     description: 'WhatsApp Bot - Mtaula 01'
+  });
+});
+
+app.get('/pair', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'pair.html'));
+});
+
+app.post('/api/pair', async (req, res) => {
+  try {
+    const { phoneNumber } = req.body;
+    
+    if (!phoneNumber) {
+      return res.status(400).json({ success: false, error: 'Phone number required' });
+    }
+    
+    if (!sock || sock.ws?.readyState !== 1) {
+      return res.status(503).json({ success: false, error: 'Bot not connected' });
+    }
+    
+    const cleanNumber = phoneNumber.replace(/\D/g, '');
+    
+    if (cleanNumber.length < 10 || cleanNumber.length > 15) {
+      return res.status(400).json({ success: false, error: 'Invalid phone number format' });
+    }
+    
+    const code = await sock.requestPairingCode(cleanNumber);
+    
+    logger.info({ phoneNumber: cleanNumber, pairingCode: code }, 'Pairing code generated via web');
+    
+    res.json({ 
+      success: true, 
+      pairingCode: code,
+      message: 'Enter this code in WhatsApp > Settings > Linked Devices > Link with Phone Number'
+    });
+  } catch (error) {
+    logger.error({ err: error }, 'Failed to generate pairing code');
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/status', (req, res) => {
+  res.json({
+    connected: sock?.ws?.readyState === 1,
+    user: sock?.user?.id || null,
+    uptime: process.uptime()
   });
 });
 

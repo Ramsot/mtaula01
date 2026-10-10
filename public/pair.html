@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mtaula 01 - Device Registration</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .container {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      padding: 40px;
+      width: 100%;
+      max-width: 420px;
+    }
+    .logo {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    .logo h1 {
+      color: #667eea;
+      font-size: 28px;
+      font-weight: 700;
+    }
+    .logo p {
+      color: #666;
+      margin-top: 8px;
+    }
+    .form-group {
+      margin-bottom: 20px;
+    }
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 500;
+      color: #333;
+    }
+    input[type="tel"] {
+      width: 100%;
+      padding: 14px 16px;
+      border: 2px solid #e1e5e9;
+      border-radius: 10px;
+      font-size: 16px;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    input[type="tel"]:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+    }
+    .btn {
+      width: 100%;
+      padding: 14px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.1s, box-shadow 0.2s;
+    }
+    .btn:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+    }
+    .btn:active:not(:disabled) {
+      transform: translateY(0);
+    }
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .result {
+      margin-top: 24px;
+      padding: 20px;
+      border-radius: 10px;
+      display: none;
+    }
+    .result.success {
+      display: block;
+      background: #f0fdf4;
+      border: 1px solid #86efac;
+    }
+    .result.error {
+      display: block;
+      background: #fef2f2;
+      border: 1px solid #fca5a5;
+    }
+    .result h3 {
+      margin-bottom: 12px;
+      font-size: 18px;
+    }
+    .result.success h3 { color: #166534; }
+    .result.error h3 { color: #991b1b; }
+    .code {
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 32px;
+      font-weight: 700;
+      letter-spacing: 4px;
+      text-align: center;
+      padding: 16px;
+      background: white;
+      border-radius: 8px;
+      color: #667eea;
+      margin: 16px 0;
+      word-break: break-all;
+    }
+    .instructions {
+      font-size: 14px;
+      color: #666;
+      line-height: 1.6;
+    }
+    .instructions ol { margin-left: 20px; }
+    .instructions li { margin-bottom: 8px; }
+    .loading {
+      display: none;
+      text-align: center;
+      padding: 20px;
+    }
+    .loading.show { display: block; }
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid #e1e5e9;
+      border-top-color: #667eea;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .footer {
+      text-align: center;
+      margin-top: 30px;
+      color: #999;
+      font-size: 13px;
+    }
+    .footer a { color: #667eea; text-decoration: none; }
+    .footer a:hover { text-decoration: underline; }
+    .status {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 20px;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+    .status.connected {
+      background: #f0fdf4;
+      color: #166534;
+    }
+    .status.disconnected {
+      background: #fef2f2;
+      color: #991b1b;
+    }
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .status.connected .status-dot { background: #22c55e; }
+    .status.disconnected .status-dot { background: #ef4444; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">
+      <h1>Mtaula 01</h1>
+      <p>WhatsApp Bot Device Registration</p>
+    </div>
+
+    <div id="status" class="status disconnected">
+      <span class="status-dot"></span>
+      <span id="statusText">Checking bot status...</span>
+    </div>
+
+    <form id="pairForm" class="form-group">
+      <label for="phoneNumber">Phone Number</label>
+      <input 
+        type="tel" 
+        id="phoneNumber" 
+        name="phoneNumber" 
+        placeholder="2547XXXXXXXX"
+        required
+        autocomplete="tel"
+        inputmode="tel"
+      >
+      <button type="submit" class="btn" id="submitBtn">Get Pairing Code</button>
+    </form>
+
+    <div id="loading" class="loading">
+      <div class="spinner"></div>
+      <p>Generating pairing code...</p>
+    </div>
+
+    <div id="result" class="result"></div>
+
+    <div class="footer">
+      <p>Mtaula 01 WhatsApp Bot &copy; 2025</p>
+      <p><a href="/health" target="_blank">Health Check</a> | <a href="/api/status" target="_blank">API Status</a></p>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById('pairForm');
+    const phoneInput = document.getElementById('phoneNumber');
+    const submitBtn = document.getElementById('submitBtn');
+    const loading = document.getElementById('loading');
+    const result = document.getElementById('result');
+    const statusEl = document.getElementById('status');
+    const statusText = document.getElementById('statusText');
+
+    async function checkStatus() {
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        statusEl.className = 'status ' + (data.connected ? 'connected' : 'disconnected');
+        statusText.textContent = data.connected 
+          ? `Bot connected as ${data.user?.split('@')[0] || 'Unknown'}`
+          : 'Bot not connected - waiting for pairing...';
+      } catch (e) {
+        statusEl.className = 'status disconnected';
+        statusText.textContent = 'Unable to check bot status';
+      }
+    }
+
+    checkStatus();
+    setInterval(checkStatus, 30000);
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const phoneNumber = phoneInput.value.trim();
+      if (!phoneNumber) return;
+
+      submitBtn.disabled = true;
+      loading.classList.add('show');
+      result.style.display = 'none';
+      result.className = 'result';
+
+      try {
+        const res = await fetch('/api/pair', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phoneNumber })
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+          result.className = 'result success';
+          result.innerHTML = `
+            <h3>✅ Pairing Code Generated</h3>
+            <div class="code">${data.pairingCode}</div>
+            <div class="instructions">
+              <p><strong>How to link:</strong></p>
+              <ol>
+                <li>Open WhatsApp on your phone</li>
+                <li>Go to <strong>Settings</strong> → <strong>Linked Devices</strong></li>
+                <li>Tap <strong>Link with Phone Number</strong></li>
+                <li>Enter the code above: <strong>${data.pairingCode}</strong></li>
+                <li>Wait for connection confirmation</li>
+              </ol>
+              <p style="margin-top: 12px; color: #667eea; font-weight: 500;">
+                Code expires in ~10 minutes. Do not share with anyone.
+              </p>
+            </div>
+          `;
+        } else {
+          result.className = 'result error';
+          result.innerHTML = `
+            <h3>❌ Error</h3>
+            <p>${data.error || 'Failed to generate pairing code'}</p>
+          `;
+        }
+        result.style.display = 'block';
+      } catch (error) {
+        result.className = 'result error';
+        result.innerHTML = `
+          <h3>❌ Error</h3>
+          <p>Network error. Please try again.</p>
+        `;
+        result.style.display = 'block';
+      } finally {
+        submitBtn.disabled = false;
+        loading.classList.remove('show');
+      }
+    });
+
+    phoneInput.addEventListener('input', (e) => {
+      e.target.value = e.target.value.replace(/\D/g, '');
+    });
+  </script>
+</body>
+</html>
