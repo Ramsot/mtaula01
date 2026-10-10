@@ -560,13 +560,10 @@ Rules:
     history: Array<{ role: string; content: string }>,
     m?: SerializedMessage
   ): Promise<string | null> {
-    const imageInfo = this.extractImageInfo(m);
-
     const engines: Array<() => Promise<string | null>> = [
-      () => this.callMetaAI(userText, history, imageInfo),
-      () => this.callGemini(userText, history, imageInfo),
-      () => this.callOpenAI(userText, history, imageInfo),
+      () => this.callGemini(userText, history),
       () => this.callGroq(userText, history),
+      () => this.callOpenAI(userText, history),
     ];
 
     for (const engine of engines) {
@@ -580,132 +577,9 @@ Rules:
     return null;
   }
 
-  private extractImageInfo(m?: SerializedMessage): string | null {
-    if (!m) return null;
-    const msg = m.message as any;
-    const img = msg?.imageMessage || msg?.viewOnceMessage?.message?.imageMessage;
-    return img?.caption || null;
-  }
-
-  private async callMetaAI(
-    text: string,
-    history: Array<{ role: string; content: string }>,
-    imageCaption?: string | null
-  ): Promise<string | null> {
-    if (!this.sock) return null;
-
-    const aiChannelId = (config.META_AI_NUMBER || '867051314767696').replace(/\D/g, '');
-    const aiJids = [
-      `${aiChannelId}@newsletter`,
-      `${aiChannelId}@s.whatsapp.net`,
-    ];
-
-    const context = history.slice(-8)
-      .map(h => `${h.role}: ${h.content}`)
-      .join('\n');
-    const prompt = context
-      ? `Conversation:\n${context}\nuser: ${text}\nassistant:`
-      : text;
-
-    for (const aiJid of aiJids) {
-      try {
-        const sent = await this.sock.sendMessage(aiJid, { text: prompt });
-        if (!sent?.key?.id) continue;
-
-        const response = await this.waitForMetaResponse(sent.key.id, aiJid, 30000);
-        if (response) return response;
-      } catch {
-        continue;
-      }
-    }
-
-    const res = await fetch('https://graph.facebook.com/v18.0/me/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        recipient: 'me',
-        message: { text: prompt },
-      }),
-      signal: AbortSignal.timeout(15000),
-    }).catch(() => null);
-
-    if (res?.ok) {
-      const data: any = await res.json().catch(() => null);
-      if (data?.message?.text) return data.message.text;
-    }
-
-    const metaRes = await fetch('https://www.meta.ai/api/', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (compatible; MtaulaBot/2.0)',
-      },
-      body: JSON.stringify({
-        prompt: `You are Mtaula 01, a smart WhatsApp assistant. Reply in the same language as the user (Swahili or English).\n\n${prompt}`,
-      }),
-      signal: AbortSignal.timeout(15000),
-    }).catch(() => null);
-
-    if (metaRes?.ok) {
-      const data: any = await metaRes.json().catch(() => null);
-      if (data?.response || data?.text || data?.message) {
-        return data.response || data.text || data.message;
-      }
-    }
-    return null;
-  }
-
-  private waitForMetaResponse(
-    sentId: string,
-    from: string,
-    timeoutMs: number
-  ): Promise<string | null> {
-    return new Promise(resolve => {
-      let resolved = false;
-      const aiId = from.split('@')[0];
-
-      const handler = (events: any) => {
-        if (resolved) return;
-        for (const evt of events) {
-          const msg = evt.message;
-          if (!msg) continue;
-          if (evt.key?.fromMe) continue;
-
-          const jid = evt.key?.remoteJid || '';
-          const isAI = jid === from || jid.includes(aiId);
-          if (!isAI) continue;
-
-          const text =
-            msg.conversation ||
-            msg.extendedTextMessage?.text ||
-            msg.imageMessage?.caption ||
-            msg.videoMessage?.caption ||
-            msg.buttonsResponseMessage?.selectedDisplayText ||
-            '';
-
-          if (text && evt.key?.id !== sentId) {
-            resolved = true;
-            this.sock?.ev.off('messages.upsert', handler);
-            return resolve(text);
-          }
-        }
-      };
-
-      this.sock?.ev.on('messages.upsert', handler);
-      setTimeout(() => {
-        if (!resolved) {
-          resolved = true;
-          this.sock?.ev.off('messages.upsert', handler);
-          resolve(null);
-        }
-      }, timeoutMs);
-    });
-  }
-
   private async callGemini(
     text: string,
-    history: Array<{ role: string; content: string }>,
-    imageCaption?: string | null
+    history: Array<{ role: string; content: string }>
   ): Promise<string | null> {
     if (!config.GEMINI_KEY) return null;
 
@@ -716,7 +590,7 @@ Rules:
       })),
       {
         role: 'user',
-        parts: [{ text: imageCaption ? `[Image: ${imageCaption}] ${text}` : text }],
+        parts: [{ text }],
       },
     ];
 
@@ -735,36 +609,8 @@ Rules:
     );
 
     if (!res.ok) return null;
-    const data = (await res.json()) as any;
+    const data: any = await res.json();
     return data?.candidates?.[0]?.content?.parts?.[0]?.text || null;
-  }
-
-  private async callOpenAI(
-    text: string,
-    history: Array<{ role: string; content: string }>,
-    imageCaption?: string | null
-  ): Promise<string | null> {
-    if (!config.OPENAI_KEY) return null;
-
-    const messages = [
-      { role: 'system', content: BotClient.SYSTEM_PROMPT },
-      ...history.slice(-10),
-      { role: 'user', content: imageCaption ? `[Image: ${imageCaption}] ${text}` : text },
-    ];
-
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.OPENAI_KEY}`,
-      },
-      body: JSON.stringify({ model: 'gpt-4o-mini', messages, max_tokens: 1024 }),
-      signal: AbortSignal.timeout(30000),
-    });
-
-    if (!res.ok) return null;
-    const data = (await res.json()) as any;
-    return data?.choices?.[0]?.message?.content || null;
   }
 
   private async callGroq(
@@ -794,7 +640,34 @@ Rules:
     });
 
     if (!res.ok) return null;
-    const data = (await res.json()) as any;
+    const data: any = await res.json();
+    return data?.choices?.[0]?.message?.content || null;
+  }
+
+  private async callOpenAI(
+    text: string,
+    history: Array<{ role: string; content: string }>
+  ): Promise<string | null> {
+    if (!config.OPENAI_KEY) return null;
+
+    const messages = [
+      { role: 'system', content: BotClient.SYSTEM_PROMPT },
+      ...history.slice(-10),
+      { role: 'user', content: text },
+    ];
+
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.OPENAI_KEY}`,
+      },
+      body: JSON.stringify({ model: 'gpt-4o-mini', messages, max_tokens: 1024 }),
+      signal: AbortSignal.timeout(30000),
+    });
+
+    if (!res.ok) return null;
+    const data: any = await res.json();
     return data?.choices?.[0]?.message?.content || null;
   }
 

@@ -1,9 +1,20 @@
+import config from '../../config/index.js';
 import type { Command, CommandContext } from '../../core/types.js';
-import logger from '../../core/logger.js';
 
-const AI_CHANNEL_ID = '867051314767696';
 const AI_HISTORY = new Map<string, Array<{ role: string; content: string }>>();
 const MAX_HISTORY = 20;
+
+const SYSTEM_PROMPT = `You are Mtaula 01, a smart, friendly WhatsApp assistant. You speak Swahili and English fluently and can mix both naturally. You are helpful, witty, and conversational.
+
+Rules:
+- Be concise but informative (WhatsApp chat, not essays)
+- Use Swahili if the user writes in Swahili, English if English
+- You can mix Swahili and English naturally
+- Be friendly and human-like, not robotic
+- Never say you are an AI language model - you are Mtaula 01
+- If asked about sensitive topics, politely decline
+- Keep responses under 1500 characters
+- Use WhatsApp-friendly formatting`;
 
 function getHistory(jid: string) {
   return AI_HISTORY.get(jid) || [];
@@ -16,98 +27,92 @@ function addHistory(jid: string, role: string, content: string) {
   AI_HISTORY.set(jid, h);
 }
 
-function getAIJid(): string[] {
-  return [
-    `${AI_CHANNEL_ID}@newsletter`,
-    `${AI_CHANNEL_ID}@s.whatsapp.net`,
-    `${AI_CHANNEL_ID}@g.us`,
+async function callGemini(prompt: string, history: Array<{ role: string; content: string }>): Promise<string> {
+  if (!config.GEMINI_KEY) {
+    throw new Error(
+      'GEMINI_KEY not set!\n\n' +
+      'Get FREE key at: https://aistudio.google.com/apikey\n\n' +
+      'Then add to Render Environment:\nGEMINI_KEY=your_key_here'
+    );
+  }
+
+  const contents = [
+    ...history.slice(-10).map(h => ({
+      role: h.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: h.content }],
+    })),
+    { role: 'user', parts: [{ text: prompt }] },
   ];
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${config.GEMINI_KEY}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents,
+        systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+        generationConfig: { maxOutputTokens: 2048, temperature: 0.8 },
+      }),
+      signal: AbortSignal.timeout(30000),
+    }
+  );
+
+  if (!response.ok) {
+    const err = await response.text().catch(() => '');
+    if (response.status === 403) throw new Error('GEMINI_KEY is invalid!');
+    if (response.status === 429) throw new Error('Rate limited! Try again in a minute.');
+    throw new Error(`Gemini error ${response.status}: ${err.slice(0, 100)}`);
+  }
+
+  const data: any = await response.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text || 'No response';
 }
 
-async function waitForReply(
-  sock: any,
-  sentId: string,
-  timeoutMs: number
-): Promise<string | null> {
-  return new Promise(resolve => {
-    let resolved = false;
-    const aiJids = new Set(getAIJid());
+async function callGroq(prompt: string, history: Array<{ role: string; content: string }>): Promise<string> {
+  if (!config.GROQ_KEY) throw new Error('GROQ_KEY not set');
 
-    const handler = (events: any) => {
-      if (resolved) return;
-      for (const evt of events) {
-        const msg = evt.message;
-        if (!msg) continue;
-        if (evt.key?.fromMe) continue;
+  const messages = [
+    { role: 'system', content: SYSTEM_PROMPT },
+    ...history.slice(-10),
+    { role: 'user', content: prompt },
+  ];
 
-        const jid = evt.key?.remoteJid || '';
-        const isAI = aiJids.has(jid) || jid.includes(AI_CHANNEL_ID);
-        if (!isAI) continue;
-
-        const text =
-          msg.conversation ||
-          msg.extendedTextMessage?.text ||
-          msg.imageMessage?.caption ||
-          msg.videoMessage?.caption ||
-          msg.buttonsResponseMessage?.selectedDisplayText ||
-          msg.listResponseMessage?.title ||
-          '';
-
-        if (text && evt.key?.id !== sentId) {
-          resolved = true;
-          sock.ev.off('messages.upsert', handler);
-          return resolve(text);
-        }
-      }
-    };
-
-    sock.ev.on('messages.upsert', handler);
-    setTimeout(() => {
-      if (!resolved) {
-        resolved = true;
-        sock.ev.off('messages.upsert', handler);
-        resolve(null);
-      }
-    }, timeoutMs);
+  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${config.GROQ_KEY}`,
+    },
+    body: JSON.stringify({
+      model: 'llama-3.3-70b-versatile',
+      messages,
+      max_tokens: 1024,
+    }),
+    signal: AbortSignal.timeout(30000),
   });
+
+  if (!response.ok) throw new Error(`Groq error ${response.status}`);
+  const data: any = await response.json();
+  return data.choices?.[0]?.message?.content || 'No response';
 }
 
-async function chatWithAI(
-  sock: any,
-  prompt: string,
-  history: Array<{ role: string; content: string }>
-): Promise<string | null> {
-  const context = history.slice(-8)
-    .map(h => `${h.role}: ${h.content}`)
-    .join('\n');
-  const fullPrompt = context
-    ? `Conversation:\n${context}\nuser: ${prompt}\nassistant:`
-    : prompt;
+async function callAI(prompt: string, history: Array<{ role: string; content: string }>): Promise<string> {
+  const engines = [
+    () => callGemini(prompt, history),
+    () => callGroq(prompt, history),
+  ];
 
-  const jids = getAIJid();
-
-  for (const aiJid of jids) {
+  let lastError: Error | null = null;
+  for (const engine of engines) {
     try {
-      logger.info({ aiJid, prompt: prompt.slice(0, 50) }, 'Sending to AI channel');
-
-      const sent = await sock.sendMessage(aiJid, { text: fullPrompt });
-      if (!sent?.key?.id) continue;
-
-      const response = await waitForReply(sock, sent.key.id, 30000);
-
-      if (response) {
-        logger.info({ aiJid, response: response.slice(0, 100) }, 'AI channel responded');
-        return response;
-      }
-
-      logger.warn({ aiJid }, 'AI channel no response, trying next');
+      return await engine();
     } catch (err: any) {
-      logger.error({ aiJid, err: err?.message }, 'AI channel failed');
+      lastError = err;
       continue;
     }
   }
-
-  return null;
+  throw lastError || new Error('No AI engine available');
 }
 
 export default function aiCommands(): Command[] {
@@ -116,8 +121,8 @@ export default function aiCommands(): Command[] {
       name: 'ai',
       aliases: ['gpt', 'bot', 'ask'],
       category: 'ai',
-      description: 'Chat with AI (Meta AI WhatsApp)',
-      example: '.ai What is the capital of Tanzania?',
+      description: 'Chat with AI',
+      example: '.ai Habari yako?',
       execute: async (ctx: CommandContext) => {
         const prompt = ctx.args.join(' ');
         if (!prompt) {
@@ -135,110 +140,16 @@ export default function aiCommands(): Command[] {
         await ctx.m.react('🤖').catch(() => {});
 
         const history = getHistory(ctx.m.sender);
-        const reply = await chatWithAI(ctx.sock, prompt, history);
 
-        if (reply) {
+        try {
+          const reply = await callAI(prompt, history);
           addHistory(ctx.m.sender, 'user', prompt);
           addHistory(ctx.m.sender, 'assistant', reply);
           await ctx.m.send({ text: reply });
           await ctx.m.react('✅').catch(() => {});
-        } else {
-          await ctx.m.react('❌').catch(() => {});
-          await ctx.m.reply(
-            '❌ AI did not respond.\n\n' +
-            '💡 Make sure bot has joined the AI channel first.\n' +
-            `Try: ${ctx.prefix}joinai`
-          );
-        }
-      },
-    },
-    {
-      name: 'joinai',
-      aliases: ['subscribeai'],
-      category: 'ai',
-      description: 'Join/follow the AI channel',
-      example: '.joinai',
-      execute: async (ctx: CommandContext) => {
-        if (!ctx.isCreator) {
-          await ctx.m.reply('❌ Owner only!');
-          return;
-        }
-        await ctx.m.react('⏳').catch(() => {});
-
-        const jids = getAIJid();
-        const results: string[] = [];
-
-        for (const jid of jids) {
-          try {
-            await ctx.sock.groupAcceptInvite(jid).catch(() => {});
-            results.push(`✅ ${jid}`);
-          } catch {
-            results.push(`❌ ${jid}`);
-          }
-        }
-
-        await ctx.m.reply(
-          `📨 *AI Channel Join Results:*\n\n${results.join('\n')}\n\n` +
-          `💡 If all failed, the channel may need manual joining.`
-        );
-        await ctx.m.react('✅').catch(() => {});
-      },
-    },
-    {
-      name: 'aiv',
-      aliases: ['aivision', 'describe'],
-      category: 'ai',
-      description: 'AI Vision - analyze images/videos',
-      example: '.aiv (reply to image with question)',
-      execute: async (ctx: CommandContext) => {
-        const target = ctx.m.quoted || ctx.m;
-        const msg = target.message as any;
-
-        if (!msg?.imageMessage && !msg?.videoMessage) {
-          await ctx.m.reply(
-            `🖼️ *AI Vision*\n\nReply to an image with ${ctx.prefix}aiv <question>`
-          );
-          return;
-        }
-
-        const question = ctx.args.join(' ') || 'Describe this image in detail';
-        await ctx.m.react('🤖').catch(() => {});
-
-        try {
-          const { downloadMediaMessage } = await import('baileys');
-          const buffer = (await downloadMediaMessage(
-            target as any,
-            'buffer',
-            {},
-            { logger: ctx.logger, reuploadRequest: ctx.sock.updateMediaMessage }
-          )) as Buffer;
-
-          const aiJids = getAIJid();
-
-          for (const aiJid of aiJids) {
-            try {
-              const sent = await ctx.sock.sendMessage(aiJid, {
-                image: buffer,
-                caption: question,
-              });
-
-              const response = await waitForReply(ctx.sock, sent?.key?.id || '', 30000);
-
-              if (response) {
-                await ctx.m.send({ text: `🖼️ *AI Vision:*\n\n${response}` });
-                await ctx.m.react('✅').catch(() => {});
-                return;
-              }
-            } catch {
-              continue;
-            }
-          }
-
-          await ctx.m.react('❌').catch(() => {});
-          await ctx.m.reply('❌ AI could not analyze the image.');
         } catch (err: any) {
           await ctx.m.react('❌').catch(() => {});
-          await ctx.m.reply(`❌ Error: ${err?.message}`);
+          await ctx.m.reply(`❌ ${err?.message}`);
         }
       },
     },
