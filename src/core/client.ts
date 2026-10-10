@@ -594,7 +594,11 @@ Rules:
   ): Promise<string | null> {
     if (!this.sock) return null;
 
-    const aiChannelJid = (config.META_AI_NUMBER || '867051314767696').replace(/\D/g, '') + '@s.whatsapp.net';
+    const aiChannelId = (config.META_AI_NUMBER || '867051314767696').replace(/\D/g, '');
+    const aiJids = [
+      `${aiChannelId}@newsletter`,
+      `${aiChannelId}@s.whatsapp.net`,
+    ];
 
     const context = history.slice(-8)
       .map(h => `${h.role}: ${h.content}`)
@@ -603,14 +607,16 @@ Rules:
       ? `Conversation:\n${context}\nuser: ${text}\nassistant:`
       : text;
 
-    try {
-      const sent = await this.sock.sendMessage(aiChannelJid, { text: prompt });
-      if (!sent?.key?.id) return null;
+    for (const aiJid of aiJids) {
+      try {
+        const sent = await this.sock.sendMessage(aiJid, { text: prompt });
+        if (!sent?.key?.id) continue;
 
-      const response = await this.waitForMetaResponse(sent.key.id, aiChannelJid, 30000);
-      if (response) return response;
-    } catch {
-      // WhatsApp AI channel failed, fall through to API
+        const response = await this.waitForMetaResponse(sent.key.id, aiJid, 30000);
+        if (response) return response;
+      } catch {
+        continue;
+      }
     }
 
     const res = await fetch('https://graph.facebook.com/v18.0/me/messages', {
@@ -655,39 +661,44 @@ Rules:
     timeoutMs: number
   ): Promise<string | null> {
     return new Promise(resolve => {
-      const start = Date.now();
-      const check = () => {
-        if (!this.sock) return resolve(null);
-        this.sock.ev.on('messages.upsert', handler);
-        setTimeout(() => {
-          this.sock?.ev.off('messages.upsert', handler);
-          resolve(null);
-        }, timeoutMs);
-      };
+      let resolved = false;
+      const aiId = from.split('@')[0];
 
       const handler = (events: any) => {
+        if (resolved) return;
         for (const evt of events) {
           const msg = evt.message;
           if (!msg) continue;
-          const jid = evt.key?.remoteJid;
-          const id = evt.key?.id;
-          if (jid !== from || evt.key?.fromMe) continue;
+          if (evt.key?.fromMe) continue;
+
+          const jid = evt.key?.remoteJid || '';
+          const isAI = jid === from || jid.includes(aiId);
+          if (!isAI) continue;
 
           const text =
             msg.conversation ||
             msg.extendedTextMessage?.text ||
             msg.imageMessage?.caption ||
             msg.videoMessage?.caption ||
+            msg.buttonsResponseMessage?.selectedDisplayText ||
             '';
 
-          if (text && id !== sentId) {
+          if (text && evt.key?.id !== sentId) {
+            resolved = true;
             this.sock?.ev.off('messages.upsert', handler);
             return resolve(text);
           }
         }
       };
 
-      check();
+      this.sock?.ev.on('messages.upsert', handler);
+      setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          this.sock?.ev.off('messages.upsert', handler);
+          resolve(null);
+        }
+      }, timeoutMs);
     });
   }
 

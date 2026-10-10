@@ -1,6 +1,7 @@
 import type { Command, CommandContext } from '../../core/types.js';
+import logger from '../../core/logger.js';
 
-const AI_CHANNEL = '867051314767696';
+const AI_CHANNEL_ID = '867051314767696';
 const AI_HISTORY = new Map<string, Array<{ role: string; content: string }>>();
 const MAX_HISTORY = 20;
 
@@ -15,13 +16,67 @@ function addHistory(jid: string, role: string, content: string) {
   AI_HISTORY.set(jid, h);
 }
 
+function getAIJid(): string[] {
+  return [
+    `${AI_CHANNEL_ID}@newsletter`,
+    `${AI_CHANNEL_ID}@s.whatsapp.net`,
+    `${AI_CHANNEL_ID}@g.us`,
+  ];
+}
+
+async function waitForReply(
+  sock: any,
+  sentId: string,
+  timeoutMs: number
+): Promise<string | null> {
+  return new Promise(resolve => {
+    let resolved = false;
+    const aiJids = new Set(getAIJid());
+
+    const handler = (events: any) => {
+      if (resolved) return;
+      for (const evt of events) {
+        const msg = evt.message;
+        if (!msg) continue;
+        if (evt.key?.fromMe) continue;
+
+        const jid = evt.key?.remoteJid || '';
+        const isAI = aiJids.has(jid) || jid.includes(AI_CHANNEL_ID);
+        if (!isAI) continue;
+
+        const text =
+          msg.conversation ||
+          msg.extendedTextMessage?.text ||
+          msg.imageMessage?.caption ||
+          msg.videoMessage?.caption ||
+          msg.buttonsResponseMessage?.selectedDisplayText ||
+          msg.listResponseMessage?.title ||
+          '';
+
+        if (text && evt.key?.id !== sentId) {
+          resolved = true;
+          sock.ev.off('messages.upsert', handler);
+          return resolve(text);
+        }
+      }
+    };
+
+    sock.ev.on('messages.upsert', handler);
+    setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        sock.ev.off('messages.upsert', handler);
+        resolve(null);
+      }
+    }, timeoutMs);
+  });
+}
+
 async function chatWithAI(
   sock: any,
   prompt: string,
   history: Array<{ role: string; content: string }>
 ): Promise<string | null> {
-  const aiJid = AI_CHANNEL + '@s.whatsapp.net';
-
   const context = history.slice(-8)
     .map(h => `${h.role}: ${h.content}`)
     .join('\n');
@@ -29,48 +84,30 @@ async function chatWithAI(
     ? `Conversation:\n${context}\nuser: ${prompt}\nassistant:`
     : prompt;
 
-  try {
-    const sent = await sock.sendMessage(aiJid, { text: fullPrompt });
-    if (!sent?.key?.id) return null;
+  const jids = getAIJid();
 
-    const response = await new Promise<string | null>(resolve => {
-      let resolved = false;
-      const handler = (events: any) => {
-        if (resolved) return;
-        for (const evt of events) {
-          const msg = evt.message;
-          if (!msg) continue;
-          if (evt.key?.remoteJid !== aiJid || evt.key?.fromMe) continue;
+  for (const aiJid of jids) {
+    try {
+      logger.info({ aiJid, prompt: prompt.slice(0, 50) }, 'Sending to AI channel');
 
-          const text =
-            msg.conversation ||
-            msg.extendedTextMessage?.text ||
-            msg.imageMessage?.caption ||
-            msg.videoMessage?.caption ||
-            '';
+      const sent = await sock.sendMessage(aiJid, { text: fullPrompt });
+      if (!sent?.key?.id) continue;
 
-          if (text && evt.key?.id !== sent.key.id) {
-            resolved = true;
-            sock.ev.off('messages.upsert', handler);
-            return resolve(text);
-          }
-        }
-      };
+      const response = await waitForReply(sock, sent.key.id, 30000);
 
-      sock.ev.on('messages.upsert', handler);
-      setTimeout(() => {
-        if (!resolved) {
-          resolved = true;
-          sock.ev.off('messages.upsert', handler);
-          resolve(null);
-        }
-      }, 30000);
-    });
+      if (response) {
+        logger.info({ aiJid, response: response.slice(0, 100) }, 'AI channel responded');
+        return response;
+      }
 
-    return response;
-  } catch {
-    return null;
+      logger.warn({ aiJid }, 'AI channel no response, trying next');
+    } catch (err: any) {
+      logger.error({ aiJid, err: err?.message }, 'AI channel failed');
+      continue;
+    }
   }
+
+  return null;
 }
 
 export default function aiCommands(): Command[] {
@@ -90,8 +127,7 @@ export default function aiCommands(): Command[] {
             `Examples:\n` +
             `• ${ctx.prefix}ai Habari yako?\n` +
             `• ${ctx.prefix}ai Nisaidie kufanya homework\n` +
-            `• ${ctx.prefix}ai What is quantum physics?\n\n` +
-            `💡 Reply to bot message for conversation context.`
+            `• ${ctx.prefix}ai What is quantum physics?`
           );
           return;
         }
@@ -108,24 +144,59 @@ export default function aiCommands(): Command[] {
           await ctx.m.react('✅').catch(() => {});
         } else {
           await ctx.m.react('❌').catch(() => {});
-          await ctx.m.reply('❌ AI did not respond. Try again later.');
+          await ctx.m.reply(
+            '❌ AI did not respond.\n\n' +
+            '💡 Make sure bot has joined the AI channel first.\n' +
+            `Try: ${ctx.prefix}joinai`
+          );
         }
       },
     },
     {
-      name: 'aiv',
-      aliases: ['aivision', 'seethis', 'describe'],
+      name: 'joinai',
+      aliases: ['subscribeai'],
       category: 'ai',
-      description: 'AI can see images - describe/analyze',
-      example: '.aiv (send/reply to image with question)',
+      description: 'Join/follow the AI channel',
+      example: '.joinai',
+      execute: async (ctx: CommandContext) => {
+        if (!ctx.isCreator) {
+          await ctx.m.reply('❌ Owner only!');
+          return;
+        }
+        await ctx.m.react('⏳').catch(() => {});
+
+        const jids = getAIJid();
+        const results: string[] = [];
+
+        for (const jid of jids) {
+          try {
+            await ctx.sock.groupAcceptInvite(jid).catch(() => {});
+            results.push(`✅ ${jid}`);
+          } catch {
+            results.push(`❌ ${jid}`);
+          }
+        }
+
+        await ctx.m.reply(
+          `📨 *AI Channel Join Results:*\n\n${results.join('\n')}\n\n` +
+          `💡 If all failed, the channel may need manual joining.`
+        );
+        await ctx.m.react('✅').catch(() => {});
+      },
+    },
+    {
+      name: 'aiv',
+      aliases: ['aivision', 'describe'],
+      category: 'ai',
+      description: 'AI Vision - analyze images/videos',
+      example: '.aiv (reply to image with question)',
       execute: async (ctx: CommandContext) => {
         const target = ctx.m.quoted || ctx.m;
         const msg = target.message as any;
 
         if (!msg?.imageMessage && !msg?.videoMessage) {
           await ctx.m.reply(
-            `🖼️ *AI Vision*\n\nReply to an image/video with ${ctx.prefix}aiv <question>\n\n` +
-            `Example: ${ctx.prefix}aiv What is in this image?`
+            `🖼️ *AI Vision*\n\nReply to an image with ${ctx.prefix}aiv <question>`
           );
           return;
         }
@@ -141,50 +212,30 @@ export default function aiCommands(): Command[] {
             {},
             { logger: ctx.logger, reuploadRequest: ctx.sock.updateMediaMessage }
           )) as Buffer;
-          const base64 = buffer.toString('base64');
 
-          const isVideo = !!msg?.videoMessage;
-          const mediaType = isVideo ? 'video' : 'image';
+          const aiJids = getAIJid();
 
-          const aiJid = AI_CHANNEL + '@s.whatsapp.net';
+          for (const aiJid of aiJids) {
+            try {
+              const sent = await ctx.sock.sendMessage(aiJid, {
+                image: buffer,
+                caption: question,
+              });
 
-          const sent = await ctx.sock.sendMessage(aiJid, {
-            [mediaType]: { url: `data:${isVideo ? 'video/mp4' : 'image/jpeg'};base64,${base64}` },
-            caption: question,
-          } as any);
+              const response = await waitForReply(ctx.sock, sent?.key?.id || '', 30000);
 
-          const response = await new Promise<string | null>(resolve => {
-            let resolved = false;
-            const handler = (events: any) => {
-              if (resolved) return;
-              for (const evt of events) {
-                if (!evt.message || evt.key?.fromMe) continue;
-                if (evt.key?.remoteJid !== aiJid) continue;
-                const text = evt.message.conversation || evt.message.extendedTextMessage?.text || '';
-                if (text && evt.key?.id !== sent?.key?.id) {
-                  resolved = true;
-                  ctx.sock.ev.off('messages.upsert', handler);
-                  return resolve(text);
-                }
+              if (response) {
+                await ctx.m.send({ text: `🖼️ *AI Vision:*\n\n${response}` });
+                await ctx.m.react('✅').catch(() => {});
+                return;
               }
-            };
-            ctx.sock.ev.on('messages.upsert', handler);
-            setTimeout(() => {
-              if (!resolved) {
-                resolved = true;
-                ctx.sock.ev.off('messages.upsert', handler);
-                resolve(null);
-              }
-            }, 30000);
-          });
-
-          if (response) {
-            await ctx.m.send({ text: `🖼️ *AI Vision Result:*\n\n${response}` });
-            await ctx.m.react('✅').catch(() => {});
-          } else {
-            await ctx.m.react('❌').catch(() => {});
-            await ctx.m.reply('❌ AI could not analyze the image. Try again.');
+            } catch {
+              continue;
+            }
           }
+
+          await ctx.m.react('❌').catch(() => {});
+          await ctx.m.reply('❌ AI could not analyze the image.');
         } catch (err: any) {
           await ctx.m.react('❌').catch(() => {});
           await ctx.m.reply(`❌ Error: ${err?.message}`);
