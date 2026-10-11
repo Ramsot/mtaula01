@@ -1,3 +1,4 @@
+import config from '../../config/index.js';
 import type { Command, CommandContext } from '../../core/types.js';
 
 export default function converterCommands(): Command[] {
@@ -169,7 +170,8 @@ export default function converterCommands(): Command[] {
         if (emojis.length !== 2) return ctx.m.reply('Provide exactly 2 emojis');
 
         try {
-          const url = `https://tenor.googleapis.com/v2/featured?key=AIzaSyAyimkuYQYF_FXVALexPuGQctUWRURdCl0&q=${encodeURIComponent(emojis.join('&'))}&client_key=my_project&component=proactive&country=US&media_filter=png_transparent&proactive=client&roies=1&collection=emoji_kitchen_v5`;
+          const tenorKey = config.TENOR_KEY || 'AIzaSyAyimkuYQYF_FXVALexPuGQctUWRURdCl0';
+          const url = `https://tenor.googleapis.com/v2/featured?key=${tenorKey}&q=${encodeURIComponent(emojis.join('&'))}&client_key=my_project&component=proactive&country=US&media_filter=png_transparent&proactive=client&roies=1&collection=emoji_kitchen_v5`;
           await ctx.m.send({ image: { url } });
         } catch (err: any) {
           await ctx.m.reply(`❌ Error: ${err?.message}`);

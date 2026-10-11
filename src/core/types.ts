@@ -84,6 +84,7 @@ export interface BotConfig {
   OPENAI_KEY: string;
   GROQ_KEY: string;
   META_AI_TOKEN: string;
+  TENOR_KEY: string;
   OPENAI_MODEL: string;
   ALWAYS_ONLINE: boolean;
   AUTO_READ: boolean;
