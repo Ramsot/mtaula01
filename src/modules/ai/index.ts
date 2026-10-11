@@ -1,6 +1,8 @@
 import config from '../../config/index.js';
 import type { Command, CommandContext } from '../../core/types.js';
+import logger from '../../core/logger.js';
 
+const AI_CHANNEL_ID = '867051314767696';
 const AI_HISTORY = new Map<string, Array<{ role: string; content: string }>>();
 const MAX_HISTORY = 20;
 
@@ -27,9 +29,63 @@ function addHistory(jid: string, role: string, content: string) {
   AI_HISTORY.set(jid, h);
 }
 
-async function callMetaAI(prompt: string, history: Array<{ role: string; content: string }>): Promise<string> {
-  if (!config.META_AI_TOKEN) throw new Error('META_AI_TOKEN not set');
+function getAIJids(): string[] {
+  return [
+    `${AI_CHANNEL_ID}@s.whatsapp.net`,
+    `${AI_CHANNEL_ID}@newsletter`,
+    `${AI_CHANNEL_ID}@lid`,
+  ];
+}
 
+async function waitForAIReply(
+  sock: any,
+  sentId: string,
+  aiNum: string,
+  timeoutMs: number
+): Promise<string | null> {
+  return new Promise(resolve => {
+    let resolved = false;
+
+    const handler = (events: any) => {
+      if (resolved) return;
+      for (const evt of events) {
+        if (!evt.message || evt.key?.fromMe) continue;
+
+        const jid = evt.key?.remoteJid || '';
+        if (!jid.includes(aiNum)) continue;
+
+        const text =
+          evt.message.conversation ||
+          evt.message.extendedTextMessage?.text ||
+          evt.message.imageMessage?.caption ||
+          evt.message.buttonsResponseMessage?.selectedDisplayText ||
+          evt.message.listResponseMessage?.title ||
+          '';
+
+        if (text && evt.key?.id !== sentId) {
+          resolved = true;
+          sock.ev.off('messages.upsert', handler);
+          return resolve(text);
+        }
+      }
+    };
+
+    sock.ev.on('messages.upsert', handler);
+    setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        sock.ev.off('messages.upsert', handler);
+        resolve(null);
+      }
+    }, timeoutMs);
+  });
+}
+
+async function chatWithMetaAI(
+  sock: any,
+  prompt: string,
+  history: Array<{ role: string; content: string }>
+): Promise<string | null> {
   const context = history.slice(-8)
     .map(h => `${h.role}: ${h.content}`)
     .join('\n');
@@ -37,47 +93,32 @@ async function callMetaAI(prompt: string, history: Array<{ role: string; content
     ? `Conversation:\n${context}\nuser: ${prompt}\nassistant:`
     : prompt;
 
-  const res = await fetch('https://graph.facebook.com/v19.0/me/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.META_AI_TOKEN}`,
-    },
-    body: JSON.stringify({
-      recipient: 'me',
-      message: { text: fullPrompt },
-    }),
-    signal: AbortSignal.timeout(30000),
-  });
+  const jids = getAIJids();
 
-  if (res.ok) {
-    const data: any = await res.json();
-    if (data?.message?.text) return data.message.text;
-    if (data?.text) return data.text;
-    if (data?.response) return data.response;
+  for (const aiJid of jids) {
+    try {
+      logger.info({ aiJid, prompt: prompt.slice(0, 50) }, 'Sending to Meta AI');
+
+      const sent = await sock.sendMessage(aiJid, { text: fullPrompt });
+      if (!sent?.key?.id) continue;
+
+      logger.info({ aiJid, msgId: sent.key.id }, 'Sent, waiting for reply...');
+
+      const response = await waitForAIReply(sock, sent.key.id, AI_CHANNEL_ID, 25000);
+
+      if (response) {
+        logger.info({ aiJid, response: response.slice(0, 100) }, 'Meta AI responded!');
+        return response;
+      }
+
+      logger.warn({ aiJid }, 'No reply, trying next JID');
+    } catch (err: any) {
+      logger.error({ aiJid, err: err?.message }, 'Meta AI JID failed');
+      continue;
+    }
   }
 
-  const aiRes = await fetch('https://www.meta.ai/api/graphql', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.META_AI_TOKEN}`,
-      'User-Agent': 'WhatsApp/2.24.1.78',
-    },
-    body: JSON.stringify({
-      query: `query AIChat($prompt: String!) { aiChat(prompt: $prompt) { response } }`,
-      variables: { prompt: fullPrompt },
-    }),
-    signal: AbortSignal.timeout(30000),
-  });
-
-  if (aiRes.ok) {
-    const data: any = await aiRes.json();
-    const response = data?.data?.aiChat?.response || data?.response || data?.text;
-    if (response) return response;
-  }
-
-  throw new Error('Meta AI failed');
+  return null;
 }
 
 async function callGemini(prompt: string, history: Array<{ role: string; content: string }>): Promise<string> {
@@ -126,7 +167,7 @@ async function callGroq(prompt: string, history: Array<{ role: string; content: 
       Authorization: `Bearer ${config.GROQ_KEY}`,
     },
     body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
+      model: 'qwen/qwen3.8-27b',
       messages,
       max_tokens: 1024,
     }),
@@ -138,9 +179,13 @@ async function callGroq(prompt: string, history: Array<{ role: string; content: 
   return data.choices?.[0]?.message?.content || 'No response';
 }
 
-async function callAI(prompt: string, history: Array<{ role: string; content: string }>): Promise<string> {
+async function callAI(
+  sock: any,
+  prompt: string,
+  history: Array<{ role: string; content: string }>
+): Promise<string> {
   const engines = [
-    () => callMetaAI(prompt, history),
+    () => chatWithMetaAI(sock, prompt, history),
     () => callGemini(prompt, history),
     () => callGroq(prompt, history),
   ];
@@ -148,7 +193,8 @@ async function callAI(prompt: string, history: Array<{ role: string; content: st
   let lastError: Error | null = null;
   for (const engine of engines) {
     try {
-      return await engine();
+      const result = await engine();
+      if (result) return result;
     } catch (err: any) {
       lastError = err;
       continue;
@@ -163,7 +209,7 @@ export default function aiCommands(): Command[] {
       name: 'ai',
       aliases: ['gpt', 'bot', 'ask'],
       category: 'ai',
-      description: 'Chat with AI',
+      description: 'Chat with AI (Meta AI → Gemini fallback)',
       example: '.ai Habari yako?',
       execute: async (ctx: CommandContext) => {
         const prompt = ctx.args.join(' ');
@@ -184,7 +230,7 @@ export default function aiCommands(): Command[] {
         const history = getHistory(ctx.m.sender);
 
         try {
-          const reply = await callAI(prompt, history);
+          const reply = await callAI(ctx.sock, prompt, history);
           addHistory(ctx.m.sender, 'user', prompt);
           addHistory(ctx.m.sender, 'assistant', reply);
           await ctx.m.send({ text: reply });
