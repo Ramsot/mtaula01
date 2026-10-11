@@ -14,6 +14,35 @@ export function createWebServer(bot: BotClient): express.Application {
   app.use(express.urlencoded({ extended: true }));
   app.use(express.static(path.resolve(__dirname, '..', '..', 'public')));
 
+  /**
+   * Guard destructive/admin endpoints. If ADMIN_TOKEN is set, callers must
+   * send it (Authorization: Bearer or ?token=). If it is NOT set, only
+   * loopback requests are allowed — never expose session reset publicly.
+   */
+  const requireAdmin: express.RequestHandler = (req, res, next) => {
+    const provided =
+      (req.headers.authorization || '').replace(/^Bearer\s+/i, '') ||
+      (req.query.token as string) ||
+      '';
+
+    if (config.ADMIN_TOKEN) {
+      if (provided !== config.ADMIN_TOKEN) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
+      return next();
+    }
+
+    const ip = req.ip || req.socket?.remoteAddress || '';
+    const isLoopback = ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+    if (isLoopback) return next();
+
+    res.status(403).json({
+      success: false,
+      error: 'Forbidden: set ADMIN_TOKEN to call this endpoint remotely',
+    });
+  };
+
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok', bot: config.BOT_NAME, uptime: process.uptime() });
   });
@@ -45,7 +74,7 @@ export function createWebServer(bot: BotClient): express.Application {
     }
   });
 
-  app.post('/api/reset', async (_req, res) => {
+  app.post('/api/reset', requireAdmin, async (_req, res) => {
     try {
       res.json({ success: true, message: 'Session cleared' });
       await bot.resetSession();
@@ -54,7 +83,26 @@ export function createWebServer(bot: BotClient): express.Application {
     }
   });
 
-  app.post('/api/pair', async (req, res) => {
+  // Pairing stays public (the /pair page needs it) but is only usable while
+  // the bot is unregistered, and is rate-limited to slow brute-force abuse.
+  const pairAttempts = new Map<string, { count: number; resetAt: number }>();
+  const pairingLimiter: express.RequestHandler = (req, res, next) => {
+    const ip = req.ip || 'unknown';
+    const now = Date.now();
+    const entry = pairAttempts.get(ip);
+    if (!entry || now > entry.resetAt) {
+      pairAttempts.set(ip, { count: 1, resetAt: now + 60_000 });
+      return next();
+    }
+    if (entry.count >= 5) {
+      res.status(429).json({ success: false, error: 'Too many attempts, try again in a minute' });
+      return;
+    }
+    entry.count++;
+    next();
+  };
+
+  app.post('/api/pair', pairingLimiter, async (req, res) => {
     try {
       const { phoneNumber } = req.body;
       if (!phoneNumber) {

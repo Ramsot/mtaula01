@@ -1,4 +1,5 @@
-import type { WASocket, proto, Contact, GroupMetadata } from 'baileys';
+import type { WASocket, proto } from 'baileys';
+import type { CommandRegistry } from './registry.js';
 
 export type CommandCategory =
   | 'main'
@@ -24,6 +25,7 @@ export interface CommandContext {
   isAdmin: boolean;
   isBotAdmin: boolean;
   logger: any;
+  registry: CommandRegistry;
 }
 
 export interface Command {
@@ -85,6 +87,8 @@ export interface BotConfig {
   GROQ_KEY: string;
   META_AI_TOKEN: string;
   TENOR_KEY: string;
+  META_AI_NUMBER: string;
+  ADMIN_TOKEN: string;
   OPENAI_MODEL: string;
   ALWAYS_ONLINE: boolean;
   AUTO_READ: boolean;

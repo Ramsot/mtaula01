@@ -13,6 +13,7 @@ import config from '../config/index.js';
 import logger from './logger.js';
 import { serialize, decodeJid } from './serializer.js';
 import { CommandRegistry } from './registry.js';
+import { askAI, type ChatTurn } from './ai.js';
 import type { BotState, SerializedMessage, CommandContext } from './types.js';
 
 export class BotClient extends EventEmitter {
@@ -24,28 +25,18 @@ export class BotClient extends EventEmitter {
   private currentQr: string | null = null;
   private qrTimestamp: number | null = null;
   private registry = new CommandRegistry();
-  private antilinkChats = new Set<string>();
   private messageStore = new Map<string, any>();
   private chatHistories = new Map<string, Array<{ role: string; content: string }>>();
   private static MAX_STORE_SIZE = 10000;
   private static MESSAGE_TTL = 48 * 60 * 60 * 1000;
   private static MAX_HISTORY = 30;
-  private static SYSTEM_PROMPT = `You are Mtaula 01, a smart, friendly WhatsApp assistant. You speak Swahili and English fluently and can mix both naturally (Swahili-English code-switching). You are helpful, witty, and conversational.
-
-Rules:
-- Be concise but informative (WhatsApp chat, not essays)
-- Use Swahili if the user writes in Swahili, English if English
-- You can mix Swahili and English naturally
-- Be friendly and human-like, not robotic
-- Never say you are an AI language model - you are Mtaula 01, a WhatsApp assistant
-- If asked about sensitive topics (adult content, violence, illegal acts), politely decline
-- You can help with: general knowledge, calculations, translations, advice, jokes, recipes, coding, school work, news, and daily life questions
-- Keep responses under 1500 characters for WhatsApp
-- Use WhatsApp-friendly formatting (no markdown headers, use *bold* and _italic_ sparingly)`;
+  private ready: Promise<void>;
 
   constructor() {
     super();
-    this.registry.loadAll();
+    // Kick off command loading immediately, but keep the promise so message
+    // handling can await it (previously commands could be missing on early msgs).
+    this.ready = this.registry.loadAll();
   }
 
   getState(): BotState {
@@ -63,24 +54,24 @@ Rules:
     };
   }
 
+  /**
+   * Owner check. Numbers are compared as full digit strings (device suffix
+   * stripped) — never via endsWith, which would let e.g. 2547 match 254712345678.
+   */
   isOwner(jid: string): boolean {
-    const digits = (s: string) => s.replace(/\D/g, '');
-    const senderDigits = digits(jid);
-    if (!senderDigits) return false;
+    const normalize = (s: string) => (s || '').split('@')[0].split(':')[0].replace(/\D/g, '');
+    const senderNum = normalize(jid);
+    if (!senderNum) return false;
 
-    if (config.OWNER_NUMBER) {
-      const ownerDigits = digits(config.OWNER_NUMBER);
-      if (senderDigits.endsWith(ownerDigits) || ownerDigits.endsWith(senderDigits)) return true;
-    }
+    const ownerNum = normalize(config.OWNER_NUMBER);
+    if (ownerNum && senderNum === ownerNum) return true;
 
-    const botDigits = digits(this.sock?.user?.id || '');
-    if (botDigits && senderDigits === botDigits) return true;
+    const botNum = normalize(this.sock?.user?.id || '');
+    if (botNum && senderNum === botNum) return true;
 
-    if (config.OWNERS?.length) {
-      for (const o of config.OWNERS) {
-        const od = digits(o);
-        if (od && (senderDigits.endsWith(od) || od.endsWith(senderDigits))) return true;
-      }
+    for (const o of config.OWNERS || []) {
+      const od = normalize(o);
+      if (od && senderNum === od) return true;
     }
 
     return false;
@@ -249,6 +240,7 @@ Rules:
 
   private async handleMessage(raw: any): Promise<void> {
     if (!this.sock) return;
+    await this.ready.catch(() => {});
 
     if ((globalThis as any).__antiDelete) {
       this.storeMessage(raw);
@@ -269,7 +261,7 @@ Rules:
       await this.sock.readMessages([m.key]).catch(() => {});
     }
 
-    if (config.AUTO_REACT && !m.body) {
+    if (config.AUTO_REACT && !m.body.startsWith(config.PREFIX)) {
       await m.react('👍').catch(() => {});
     }
 
@@ -280,13 +272,7 @@ Rules:
     }
 
     const prefix = config.PREFIX;
-    if (!m.body.startsWith(prefix)) return;
-
-    const cmd = m.body.slice(prefix.length).split(' ')[0].toLowerCase();
-    const text = m.body.slice(prefix.length + cmd.length).trim();
-    const args = text.split(/\s+/).filter(Boolean);
-
-    if (!cmd) return;
+    const isCommand = m.body.startsWith(prefix);
 
     let isAdmin = false;
     let isBotAdmin = false;
@@ -300,6 +286,30 @@ Rules:
         isBotAdmin = adminJids.includes(botJid);
       } catch {}
     }
+
+    // Anti-link: remove group invite links from non-admins (owner exempt).
+    if (config.ANTILINK && m.isGroup && !isCommand && !isAdmin && !isCreator) {
+      const inviteMatch = m.body.match(/chat\.whatsapp\.com\/(?:invite\/)?([A-Za-z0-9]{10,})/);
+      if (inviteMatch) {
+        if (isBotAdmin) {
+          await this.sock.sendMessage(m.from, { delete: m.key }).catch(() => {});
+        }
+        await this.sock.sendMessage(m.from, {
+          text: `🔗 @${m.sender.split('@')[0]}, group links are not allowed here!${isBotAdmin ? '\nYour message was removed.' : '\n⚠️ I need admin rights to remove it.'}`,
+          mentions: [m.sender],
+        }).catch(() => {});
+        logger.info({ from: m.from, sender: m.sender }, 'Anti-link: group invite removed');
+        return;
+      }
+    }
+
+    if (!isCommand) return;
+
+    const cmd = m.body.slice(prefix.length).split(' ')[0].toLowerCase();
+    const text = m.body.slice(prefix.length + cmd.length).trim();
+    const args = text.split(/\s+/).filter(Boolean);
+
+    if (!cmd) return;
 
     logger.info({ cmd, sender: m.sender, from: m.from, isGroup: m.isGroup }, 'Command received');
 
@@ -321,6 +331,7 @@ Rules:
       isAdmin,
       isBotAdmin,
       logger,
+      registry: this.registry,
     };
 
     try {
@@ -488,7 +499,7 @@ Rules:
 
   private async handleAutoChat(m: SerializedMessage): Promise<void> {
     if (!this.sock) return;
-    if (!m.body || m.body.startsWith('.')) return;
+    if (!m.body || m.body.startsWith(config.PREFIX)) return;
     if (m.fromMe) return;
     if (this.isOwner(m.sender)) return;
 
@@ -529,6 +540,10 @@ Rules:
       this.addChatHistory(m.sender, 'user', userText);
       this.addChatHistory(m.sender, 'assistant', aiReply);
 
+      if (config.AUTO_TYPING) {
+        await this.sock.sendPresenceUpdate('composing', m.from).catch(() => {});
+      }
+
       await this.sock.sendMessage(m.from, {
         text: aiReply,
         mentions: m.isGroup ? m.mentionedJid : undefined,
@@ -542,7 +557,7 @@ Rules:
     }
   }
 
-  private getChatHistory(jid: string): Array<{ role: string; content: string }> {
+  private getChatHistory(jid: string): ChatTurn[] {
     return this.chatHistories.get(jid) || [];
   }
 
@@ -557,196 +572,16 @@ Rules:
 
   private async callAI(
     userText: string,
-    history: Array<{ role: string; content: string }>,
-    m?: SerializedMessage
+    history: ChatTurn[],
+    _m?: SerializedMessage
   ): Promise<string | null> {
-    const engines: Array<() => Promise<string | null>> = [
-      () => this.callMetaAI(userText, history),
-      () => this.callGemini(userText, history),
-      () => this.callGroq(userText, history),
-      () => this.callOpenAI(userText, history),
-    ];
-
-    for (const engine of engines) {
-      try {
-        const result = await engine();
-        if (result) return result;
-      } catch {
-        continue;
-      }
+    try {
+      const { text } = await askAI(this.sock, userText, history);
+      return text;
+    } catch (err: any) {
+      logger.error({ err: err?.message }, 'All AI engines failed');
+      return null;
     }
-    return null;
-  }
-
-  private async callMetaAI(
-    text: string,
-    history: Array<{ role: string; content: string }>
-  ): Promise<string | null> {
-    if (!this.sock) return null;
-
-    const aiChannelId = '867051314767696';
-    const aiJids = [
-      `${aiChannelId}@s.whatsapp.net`,
-      `${aiChannelId}@newsletter`,
-      `${aiChannelId}@lid`,
-    ];
-
-    const context = history.slice(-8)
-      .map(h => `${h.role}: ${h.content}`)
-      .join('\n');
-    const prompt = context
-      ? `Conversation:\n${context}\nuser: ${text}\nassistant:`
-      : text;
-
-    for (const aiJid of aiJids) {
-      try {
-        const sent = await this.sock.sendMessage(aiJid, { text: prompt });
-        if (!sent?.key?.id) continue;
-
-        const response = await this.waitForAIReply(sent.key.id, aiChannelId, 25000);
-        if (response) return response;
-      } catch {
-        continue;
-      }
-    }
-
-    return null;
-  }
-
-  private waitForAIReply(
-    sentId: string,
-    aiNum: string,
-    timeoutMs: number
-  ): Promise<string | null> {
-    return new Promise(resolve => {
-      let resolved = false;
-
-      const handler = (events: any) => {
-        if (resolved) return;
-        for (const evt of events) {
-          if (!evt.message || evt.key?.fromMe) continue;
-
-          const jid = evt.key?.remoteJid || '';
-          if (!jid.includes(aiNum)) continue;
-
-          const text =
-            evt.message.conversation ||
-            evt.message.extendedTextMessage?.text ||
-            evt.message.imageMessage?.caption ||
-            evt.message.buttonsResponseMessage?.selectedDisplayText ||
-            '';
-
-          if (text && evt.key?.id !== sentId) {
-            resolved = true;
-            this.sock?.ev.off('messages.upsert', handler);
-            return resolve(text);
-          }
-        }
-      };
-
-      this.sock?.ev.on('messages.upsert', handler);
-      setTimeout(() => {
-        if (!resolved) {
-          resolved = true;
-          this.sock?.ev.off('messages.upsert', handler);
-          resolve(null);
-        }
-      }, timeoutMs);
-    });
-  }
-
-  private async callGemini(
-    text: string,
-    history: Array<{ role: string; content: string }>
-  ): Promise<string | null> {
-    if (!config.GEMINI_KEY) return null;
-
-    const contents = [
-      ...history.slice(-10).map(h => ({
-        role: h.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: h.content }],
-      })),
-      {
-        role: 'user',
-        parts: [{ text }],
-      },
-    ];
-
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${config.GEMINI_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents,
-          systemInstruction: { parts: [{ text: BotClient.SYSTEM_PROMPT }] },
-          generationConfig: { maxOutputTokens: 2048, temperature: 0.8 },
-        }),
-        signal: AbortSignal.timeout(30000),
-      }
-    );
-
-    if (!res.ok) return null;
-    const data: any = await res.json();
-    return data?.candidates?.[0]?.content?.parts?.[0]?.text || null;
-  }
-
-  private async callGroq(
-    text: string,
-    history: Array<{ role: string; content: string }>
-  ): Promise<string | null> {
-    if (!config.GROQ_KEY) return null;
-
-    const messages = [
-      { role: 'system', content: BotClient.SYSTEM_PROMPT },
-      ...history.slice(-10),
-      { role: 'user', content: text },
-    ];
-
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.GROQ_KEY}`,
-      },
-      body: JSON.stringify({
-        model: 'qwen/qwen3.8-27b',
-        messages,
-        max_tokens: 1024,
-      }),
-      signal: AbortSignal.timeout(30000),
-    });
-
-    if (!res.ok) return null;
-    const data: any = await res.json();
-    return data?.choices?.[0]?.message?.content || null;
-  }
-
-  private async callOpenAI(
-    text: string,
-    history: Array<{ role: string; content: string }>
-  ): Promise<string | null> {
-    if (!config.OPENAI_KEY) return null;
-
-    const messages = [
-      { role: 'system', content: BotClient.SYSTEM_PROMPT },
-      ...history.slice(-10),
-      { role: 'user', content: text },
-    ];
-
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.OPENAI_KEY}`,
-      },
-      body: JSON.stringify({ model: 'gpt-4o-mini', messages, max_tokens: 1024 }),
-      signal: AbortSignal.timeout(30000),
-    });
-
-    if (!res.ok) return null;
-    const data: any = await res.json();
-    return data?.choices?.[0]?.message?.content || null;
   }
 
   private async handleViewOnce(m: SerializedMessage): Promise<void> {

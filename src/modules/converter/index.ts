@@ -1,5 +1,107 @@
-import config from '../../config/index.js';
 import type { Command, CommandContext } from '../../core/types.js';
+
+const NOTO_EMOJI = 'https://fonts.gstatic.com/s/e/notoemoji/latest';
+
+/**
+ * Fetch a single emoji's PNG from Google's Noto emoji CDN (no API key needed).
+ * Sequence URLs (skin tones, ZWJ) are not always available, so we fall back to
+ * the first codepoint, which always resolves.
+ */
+async function fetchEmojiPng(emoji: string): Promise<Buffer | null> {
+  const cps = [...emoji].map(c => c.codePointAt(0)!.toString(16));
+  const candidates = [cps.join('-'), cps[0]];
+
+  for (const cp of candidates) {
+    try {
+      const res = await fetch(`${NOTO_EMOJI}/${cp}/512.png`, {
+        signal: AbortSignal.timeout(10000),
+      });
+      if (res.ok) {
+        const buf = Buffer.from(await res.arrayBuffer());
+        if (buf.length > 0) return buf;
+      }
+    } catch {}
+  }
+  return null;
+}
+
+/** Compose two emoji PNGs side by side into one image. */
+async function composeEmojimix(emojis: string[]): Promise<Buffer> {
+  const { default: Jimp } = await import('jimp');
+
+  const pngs = await Promise.all(emojis.map(fetchEmojiPng));
+  const available = pngs.filter((b): b is Buffer => !!b);
+  if (!available.length) throw new Error('Could not fetch emoji images');
+
+  const size = 256;
+  const canvas = new Jimp(available.length * size, size, 0x00000000);
+
+  for (let i = 0; i < available.length; i++) {
+    const img = await Jimp.read(available[i]);
+    img.contain(size, size);
+    canvas.composite(img, i * size, 0);
+  }
+
+  return canvas.getBufferAsync(Jimp.MIME_PNG);
+}
+
+async function downloadMedia(ctx: CommandContext): Promise<Buffer | null> {
+  try {
+    const target = ctx.m.quoted || ctx.m;
+    const type = target.type;
+    let media: any;
+
+    if (type === 'image') {
+      media = target.message?.imageMessage;
+    } else if (type === 'video') {
+      media = target.message?.videoMessage;
+    } else if (type === 'sticker') {
+      media = target.message?.stickerMessage;
+    } else {
+      return null;
+    }
+
+    if (!media) return null;
+
+    const { downloadMediaMessage } = await import('baileys');
+    const buffer = await downloadMediaMessage(
+      target as any,
+      'buffer',
+      {},
+      { logger: ctx.logger, reuploadRequest: ctx.sock.updateMediaMessage }
+    );
+    return buffer as Buffer;
+  } catch (err) {
+    ctx.logger?.error?.({ err }, 'Failed to download media');
+    return null;
+  }
+}
+
+/** Convert webp (sticker) to png: sharp first, then the `dwebp` CLI (installed in Docker). */
+async function webpToPng(input: Buffer): Promise<Buffer> {
+  try {
+    const { default: sharp } = await import('sharp');
+    return await sharp(input).png().toBuffer();
+  } catch {}
+
+  const { execFile } = await import('child_process');
+  const { promisify } = await import('util');
+  const fs = await import('fs/promises');
+  const os = await import('os');
+  const path = await import('path');
+  const run = promisify(execFile);
+
+  const inPath = path.join(os.tmpdir(), `vo-${Date.now()}.webp`);
+  const outPath = `${inPath}.png`;
+  try {
+    await fs.writeFile(inPath, input);
+    await run('dwebp', [inPath, '-o', outPath]);
+    return await fs.readFile(outPath);
+  } finally {
+    await fs.rm(inPath, { force: true }).catch(() => {});
+    await fs.rm(outPath, { force: true }).catch(() => {});
+  }
+}
 
 export default function converterCommands(): Command[] {
   return [
@@ -17,11 +119,9 @@ export default function converterCommands(): Command[] {
 
         await ctx.m.react('⏳').catch(() => {});
         try {
-          // Download media
           const media = await downloadMedia(ctx);
           if (!media) throw new Error('Failed to download media');
 
-          // Use wa-sticker-formatter
           const { Sticker, StickerTypes } = await import('wa-sticker-formatter');
           const sticker = new Sticker(media, {
             pack: 'Mtaula 01',
@@ -57,10 +157,9 @@ export default function converterCommands(): Command[] {
           const media = await downloadMedia(ctx);
           if (!media) throw new Error('Failed to download media');
 
-          const Jimp = (await import('jimp')).default;
-          const image = Jimp.read(media);
-          const buffer = await (await image).getBufferAsync(Jimp.MIME_PNG);
-          await ctx.m.send({ image: buffer, caption: '🖼️ Converted!' });
+          // Stickers are webp; Jimp cannot decode webp, so convert explicitly.
+          const png = await webpToPng(media);
+          await ctx.m.send({ image: png, caption: '🖼️ Converted!' });
           await ctx.m.react('✅').catch(() => {});
         } catch (err: any) {
           await ctx.m.react('❌').catch(() => {});
@@ -89,22 +188,25 @@ export default function converterCommands(): Command[] {
           const os = await import('os');
           const pathMod = await import('path');
           const ffmpeg = (await import('fluent-ffmpeg')).default;
-          const tmpIn = pathMod.join(os.tmpdir(), 'in-' + Date.now());
-          const tmpOut = tmpIn + '.mp3';
+          const tmpIn = pathMod.join(os.tmpdir(), `in-${Date.now()}`);
+          const tmpOut = `${tmpIn}.mp3`;
           await fsMod.writeFile(tmpIn, media);
-          await new Promise<void>((resolve, reject) => {
-            ffmpeg(tmpIn)
-              .audioCodec('libmp3lame')
-              .format('mp3')
-              .on('end', () => resolve())
-              .on('error', reject)
-              .save(tmpOut);
-          });
-          const buffer = await fsMod.readFile(tmpOut);
-          await fsMod.unlink(tmpIn).catch(() => {});
-          await fsMod.unlink(tmpOut).catch(() => {});
-          await ctx.m.send({ audio: buffer, mimetype: 'audio/mpeg', fileName: 'audio.mp3' });
-          await ctx.m.react('✅').catch(() => {});
+          try {
+            await new Promise<void>((resolve, reject) => {
+              ffmpeg(tmpIn)
+                .audioCodec('libmp3lame')
+                .format('mp3')
+                .on('end', () => resolve())
+                .on('error', reject)
+                .save(tmpOut);
+            });
+            const buffer = await fsMod.readFile(tmpOut);
+            await ctx.m.send({ audio: buffer, mimetype: 'audio/mpeg', fileName: 'audio.mp3' });
+            await ctx.m.react('✅').catch(() => {});
+          } finally {
+            await fsMod.unlink(tmpIn).catch(() => {});
+            await fsMod.unlink(tmpOut).catch(() => {});
+          }
         } catch (err: any) {
           await ctx.m.react('❌').catch(() => {});
           await ctx.m.reply(`❌ Conversion error: ${err?.message}`);
@@ -132,7 +234,7 @@ export default function converterCommands(): Command[] {
 
         await ctx.m.react('⏳').catch(() => {});
         try {
-          const Jimp = (await import('jimp')).default;
+          const { default: Jimp } = await import('jimp');
           const image = new Jimp(800, 300, 0xffffffff);
           const font = await Jimp.loadFont(Jimp.FONT_SANS_64_BLACK);
           const textWidth = Jimp.measureText(font, ctx.text);
@@ -160,20 +262,25 @@ export default function converterCommands(): Command[] {
     },
     {
       name: 'emojimix',
-      aliases: ['mixemoji', 'emojimix'],
+      aliases: ['mixemoji', 'emix'],
       category: 'converter',
       description: 'Mix two emojis',
+      usage: '.emojimix 😂❤️',
       example: '.emojimix 😂❤️',
       execute: async (ctx: CommandContext) => {
         if (!ctx.text) return ctx.m.reply(`Usage: ${ctx.prefix}emojimix 😂❤️`);
-        const emojis = ctx.text.split(/\s+/).filter(Boolean);
-        if (emojis.length !== 2) return ctx.m.reply('Provide exactly 2 emojis');
 
+        const emojis = Array.from(ctx.text.replace(/\s+/g, '')).filter(ch => /\p{Extended_Pictographic}/u.test(ch));
+        if (emojis.length < 2) return ctx.m.reply('Provide at least 2 emojis, e.g. .emojimix 😂❤️');
+
+        await ctx.m.react('⏳').catch(() => {});
         try {
-          const tenorKey = config.TENOR_KEY || 'AIzaSyAyimkuYQYF_FXVALexPuGQctUWRURdCl0';
-          const url = `https://tenor.googleapis.com/v2/featured?key=${tenorKey}&q=${encodeURIComponent(emojis.join('&'))}&client_key=my_project&component=proactive&country=US&media_filter=png_transparent&proactive=client&roies=1&collection=emoji_kitchen_v5`;
-          await ctx.m.send({ image: { url } });
+          // Local composition from Noto emoji PNGs — no API key required.
+          const png = await composeEmojimix(emojis.slice(0, 3));
+          await ctx.m.send({ image: png, caption: `Emoji mix: ${emojis.slice(0, 3).join(' + ')}` });
+          await ctx.m.react('✅').catch(() => {});
         } catch (err: any) {
+          await ctx.m.react('❌').catch(() => {});
           await ctx.m.reply(`❌ Error: ${err?.message}`);
         }
       },
@@ -194,7 +301,7 @@ export default function converterCommands(): Command[] {
           const media = await downloadMedia(ctx);
           if (!media) throw new Error('Failed to download media');
 
-          const Jimp = (await import('jimp')).default;
+          const { default: Jimp } = await import('jimp');
           const image = await Jimp.read(media);
           image.blur(10);
           const buffer = await image.getBufferAsync(Jimp.MIME_JPEG);
@@ -207,36 +314,4 @@ export default function converterCommands(): Command[] {
       },
     },
   ];
-}
-
-async function downloadMedia(ctx: CommandContext): Promise<Buffer | null> {
-  try {
-    const target = ctx.m.quoted || ctx.m;
-    const type = target.type;
-    let media: any;
-
-    if (type === 'image') {
-      media = target.message?.imageMessage;
-    } else if (type === 'video') {
-      media = target.message?.videoMessage;
-    } else if (type === 'sticker') {
-      media = target.message?.stickerMessage;
-    } else {
-      return null;
-    }
-
-    if (!media) return null;
-
-    const { downloadMediaMessage } = await import('baileys');
-    const buffer = await downloadMediaMessage(
-      target as any,
-      'buffer',
-      {},
-      { logger: ctx.logger, reuploadRequest: ctx.sock.updateMediaMessage }
-    );
-    return buffer as Buffer;
-  } catch (err) {
-    ctx.logger?.error?.({ err }, 'Failed to download media');
-    return null;
-  }
 }

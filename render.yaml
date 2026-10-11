@@ -11,6 +11,10 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      # Persistent WhatsApp session — attach a Disk, or every redeploy forces
+      # a full re-pair.
+      - key: SESSION_DIR
+        value: /data/auth_info_baileys
       - key: PORT
         value: 10000
       - key: PREFIX
@@ -25,7 +29,12 @@ services:
         value: Mtaula 01
       - key: GEMINI_KEY
         sync: false
+      - key: GROQ_KEY
+        sync: false
       - key: OPENAI_KEY
+        sync: false
+      # Protects /api/reset and /api/pair from the public internet.
+      - key: ADMIN_TOKEN
         sync: false
       - key: WELCOME
         value: "true"
@@ -35,3 +44,8 @@ services:
         value: Africa/Dar_es_Salaam
       - key: DEBUG_MODE
         value: "false"
+
+    disk:
+      name: mtaula-session
+      mountPath: /data
+      sizeGB: 1

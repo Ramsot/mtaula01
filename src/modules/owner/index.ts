@@ -40,13 +40,15 @@ export default function ownerCommands(): Command[] {
       name: 'block',
       category: 'owner',
       description: 'Block a user',
-      example: '.block @user or .block 255XXXXXXXXX',
+      usage: '.block @user | .block 255XXXXXXXXX',
+      example: '.block @user',
       execute: async (ctx: CommandContext) => {
         if (!ctx.isCreator) {
           await ctx.m.reply('❌ Owner only command!');
           return;
         }
-        let target = ctx.m.mentionedJid[0] || ctx.args[0]?.replace(/\D/g, '') + '@s.whatsapp.net';
+        const number = ctx.args[0]?.replace(/\D/g, '');
+        const target = ctx.m.mentionedJid[0] || (number ? number + '@s.whatsapp.net' : '');
         if (!target) {
           await ctx.m.reply(`Usage: ${ctx.prefix}block @user or ${ctx.prefix}block 255XXXXXXXXX`);
           return;
@@ -59,15 +61,17 @@ export default function ownerCommands(): Command[] {
       name: 'unblock',
       category: 'owner',
       description: 'Unblock a user',
+      usage: '.unblock @user | .unblock 255XXXXXXXXX',
       example: '.unblock @user',
       execute: async (ctx: CommandContext) => {
         if (!ctx.isCreator) {
           await ctx.m.reply('❌ Owner only command!');
           return;
         }
-        let target = ctx.m.mentionedJid[0] || ctx.args[0]?.replace(/\D/g, '') + '@s.whatsapp.net';
+        const number = ctx.args[0]?.replace(/\D/g, '');
+        const target = ctx.m.mentionedJid[0] || (number ? number + '@s.whatsapp.net' : '');
         if (!target) {
-          await ctx.m.reply(`Usage: ${ctx.prefix}unblock @user`);
+          await ctx.m.reply(`Usage: ${ctx.prefix}unblock @user or ${ctx.prefix}unblock 255XXXXXXXXX`);
           return;
         }
         await ctx.sock.updateBlockStatus(target, 'unblock');
@@ -76,7 +80,7 @@ export default function ownerCommands(): Command[] {
     },
     {
       name: 'setbotpp',
-      aliases: ['setppbot', 'setprofile'],
+      aliases: ['setppbot'],
       category: 'owner',
       description: 'Set bot profile picture (reply to image)',
       execute: async (ctx: CommandContext) => {
@@ -84,14 +88,26 @@ export default function ownerCommands(): Command[] {
           await ctx.m.reply('❌ Owner only command!');
           return;
         }
-        const img = ctx.m.quoted?.type === 'image' ? ctx.m.quoted : null;
-        if (!img) {
+        const target = ctx.m.quoted || ctx.m;
+        const msg = target.message as any;
+        if (!msg?.imageMessage && !msg?.stickerMessage) {
           await ctx.m.reply(`Reply to an image with ${ctx.prefix}setbotpp`);
           return;
         }
         await ctx.m.reply('⏳ Setting profile picture...');
-        // Media download would go here
-        await ctx.m.reply('✅ Profile picture updated!');
+        try {
+          const { downloadMediaMessage } = await import('baileys');
+          const buffer = (await downloadMediaMessage(
+            target as any,
+            'buffer',
+            {},
+            { logger: ctx.logger, reuploadRequest: ctx.sock.updateMediaMessage }
+          )) as Buffer;
+          await ctx.sock.updateProfilePicture(ctx.sock.user!.id, buffer);
+          await ctx.m.reply('✅ Profile picture updated!');
+        } catch (err: any) {
+          await ctx.m.reply(`❌ Failed: ${err?.message}`);
+        }
       },
     },
     {

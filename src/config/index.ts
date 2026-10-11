@@ -17,6 +17,7 @@ const envSchema = z.object({
   META_AI_TOKEN: z.string().default(''),
   TENOR_KEY: z.string().default(''),
   META_AI_NUMBER: z.string().default('867051314767696'),
+  ADMIN_TOKEN: z.string().default(''),
   OPENAI_MODEL: z.string().default('gpt-4o-mini'),
   ALWAYS_ONLINE: z.string().default('false').transform(v => v === 'true'),
   AUTO_READ: z.string().default('false').transform(v => v === 'true'),
@@ -34,6 +35,13 @@ const envSchema = z.object({
 });
 
 function loadConfig(): BotConfig {
+  // Vitest/Vite set MODE=test in the environment before dotenv runs; an
+  // invalid mode should fall back to the .env value / default, not kill the
+  // process. Same idea for any other enum we add later.
+  if (process.env.MODE && !['public', 'self'].includes(process.env.MODE)) {
+    delete process.env.MODE;
+  }
+
   const parsed = envSchema.safeParse(process.env);
   if (!parsed.success) {
     console.error('Config validation errors:', parsed.error.flatten().fieldErrors);
@@ -54,6 +62,8 @@ function loadConfig(): BotConfig {
     GROQ_KEY: e.GROQ_KEY,
     META_AI_TOKEN: e.META_AI_TOKEN,
     TENOR_KEY: e.TENOR_KEY,
+    META_AI_NUMBER: e.META_AI_NUMBER,
+    ADMIN_TOKEN: e.ADMIN_TOKEN,
     OPENAI_MODEL: e.OPENAI_MODEL,
     ALWAYS_ONLINE: e.ALWAYS_ONLINE,
     AUTO_READ: e.AUTO_READ,

@@ -12,47 +12,44 @@ export default function downloadCommands(): Command[] {
         if (!ctx.text) return ctx.m.reply(`Usage: ${ctx.prefix}play <song name or URL>`);
 
         await ctx.m.react('⏳').catch(() => {});
-        await ctx.m.reply('🔍 Searching...');
 
         try {
-          const play = (await import('play-dl')).default;
-          let videoUrl = ctx.text;
+          const { ytSearch, ytVideoInfo } = await import('../../utils/youtube.js');
 
-          if (!ctx.text.includes('youtube.com') && !ctx.text.includes('youtu.be')) {
-            const results = await play.search(ctx.text, { limit: 1 });
+          let videoUrl = ctx.text;
+          if (!/youtube\.com|youtu\.be/.test(ctx.text)) {
+            const results = await ytSearch(ctx.text, 1);
             if (!results.length) throw new Error('No results found');
             videoUrl = results[0].url;
           }
 
-          const info = await play.video_info(videoUrl);
-          const title = info.video_details.title;
-          const duration = info.video_details.durationRaw;
-          const thumbnail = info.video_details.thumbnails?.[0]?.url;
-          const views = info.video_details.views?.toLocaleString();
-          const channel = info.video_details.channel?.name;
+          const info = await ytVideoInfo(videoUrl);
+          if (!info) throw new Error('Could not read video info');
+          await ctx.m.reply(
+            `🎵 *Downloading Audio*\n\n📝 Title: ${info.title}\n👤 Channel: ${info.channel}${info.durationRaw ? `\n⏱️ ${info.durationRaw}` : ''}${info.views ? `\n👁️ ${info.views.toLocaleString()} views` : ''}`
+          );
 
-          await ctx.m.send({
-            image: { url: thumbnail },
-            caption: `🎵 *Downloading Audio*\n\n📝 Title: ${title}\n👤 Channel: ${channel}\n⏱️ Duration: ${duration}\n👁️ Views: ${views}`,
-          });
-
-          // Get audio stream
+          const play = (await import('play-dl')).default;
           const stream = await play.stream(videoUrl, { quality: 2 });
           const chunks: Buffer[] = [];
-          stream.stream.on('data', (chunk: Buffer) => chunks.push(chunk));
-          await new Promise((resolve) => stream.stream.on('end', resolve));
+          await new Promise<void>((resolve, reject) => {
+            stream.stream.on('data', (chunk: Buffer) => chunks.push(chunk));
+            stream.stream.on('end', () => resolve());
+            stream.stream.on('error', reject);
+          });
           const buffer = Buffer.concat(chunks);
+          if (!buffer.length) throw new Error('Empty audio stream');
 
           await ctx.m.send({
             audio: buffer,
-            mimetype: 'audio/mpeg',
-            fileName: `${title}.mp3`,
+            mimetype: 'audio/webm',
+            fileName: `${info.title.replace(/[\\/:*?"<>|]/g, '')}.webm`,
           });
 
           await ctx.m.react('✅').catch(() => {});
         } catch (err: any) {
           await ctx.m.react('❌').catch(() => {});
-          await ctx.m.reply(`❌ Download error: ${err?.message}`);
+          await ctx.m.reply(`❌ Download error: ${err?.message}\n\n💡 Try a shorter/older video, or use ${ctx.prefix}yts to pick a specific result.`);
         }
       },
     },
@@ -66,39 +63,37 @@ export default function downloadCommands(): Command[] {
         if (!ctx.text) return ctx.m.reply(`Usage: ${ctx.prefix}ytmp4 <URL or search>`);
 
         await ctx.m.react('⏳').catch(() => {});
-        await ctx.m.reply('🔍 Searching...');
 
         try {
-          const play = (await import('play-dl')).default;
-          let videoUrl = ctx.text;
+          const { ytSearch, ytVideoInfo } = await import('../../utils/youtube.js');
 
-          if (!ctx.text.includes('youtube.com') && !ctx.text.includes('youtu.be')) {
-            const results = await play.search(ctx.text, { limit: 1 });
+          let videoUrl = ctx.text;
+          if (!/youtube\.com|youtu\.be/.test(ctx.text)) {
+            const results = await ytSearch(ctx.text, 1);
             if (!results.length) throw new Error('No results found');
             videoUrl = results[0].url;
           }
 
-          const info = await play.video_info(videoUrl);
-          const title = info.video_details.title;
-          const thumbnail = info.video_details.thumbnails?.[0]?.url;
+          const info = await ytVideoInfo(videoUrl);
+          if (!info) throw new Error('Could not read video info');
+          await ctx.m.reply(`🎬 *Downloading Video*: ${info.title}\n⚠️ Large videos may fail on WhatsApp`);
 
-          await ctx.m.send({
-            image: { url: thumbnail },
-            caption: `🎬 *Downloading Video*: ${title}\n⚠️ Large videos may fail on WhatsApp`,
-          });
-
-          // Get video stream
+          const play = (await import('play-dl')).default;
           const stream = await play.stream(videoUrl, { quality: 1 });
           const chunks: Buffer[] = [];
-          stream.stream.on('data', (chunk: Buffer) => chunks.push(chunk));
-          await new Promise((resolve) => stream.stream.on('end', resolve));
+          await new Promise<void>((resolve, reject) => {
+            stream.stream.on('data', (chunk: Buffer) => chunks.push(chunk));
+            stream.stream.on('end', () => resolve());
+            stream.stream.on('error', reject);
+          });
           const buffer = Buffer.concat(chunks);
+          if (!buffer.length) throw new Error('Empty video stream');
 
           await ctx.m.send({
             video: buffer,
             mimetype: 'video/mp4',
-            fileName: `${title}.mp4`,
-            caption: `🎬 ${title}`,
+            fileName: `${info.title.replace(/[\\/:*?"<>|]/g, '')}.mp4`,
+            caption: `🎬 ${info.title}`,
           });
 
           await ctx.m.react('✅').catch(() => {});
@@ -120,15 +115,34 @@ export default function downloadCommands(): Command[] {
 
         await ctx.m.react('⏳').catch(() => {});
         try {
-          const response = await fetch(
-            `https://api.tiklydown.eu.org/api/download?url=${encodeURIComponent(ctx.text)}`
-          );
-          const data: any = await response.json();
-          if (!data.video?.nowm) throw new Error('Failed to get video');
+          // tiklydown.eu.org has been unreliable; tikwm is the primary now.
+          let data: any = null;
+          for (const endpoint of [
+            `https://www.tikwm.com/api/?url=${encodeURIComponent(ctx.text)}`,
+            `https://api.tiklydown.eu.org/api/download?url=${encodeURIComponent(ctx.text)}`,
+          ]) {
+            try {
+              const response = await fetch(endpoint, {
+                headers: { 'User-Agent': 'Mozilla/5.0' },
+                signal: AbortSignal.timeout(25000),
+              });
+              const json: any = await response.json();
+              const videoUrl = json?.data?.play || json?.data?.hdplay || json?.video?.nowm;
+              if (videoUrl) {
+                data = {
+                  videoUrl,
+                  author: json?.data?.author?.nickname || json?.author?.name,
+                  title: json?.data?.title || json?.title,
+                };
+                break;
+              }
+            } catch {}
+          }
+          if (!data) throw new Error('Failed to get video (links may be expired)');
 
           await ctx.m.send({
-            video: { url: data.video.nowm },
-            caption: `🎬 *TikTok Download*\n\n👤 Author: ${data.author?.name || 'Unknown'}\n📝 Title: ${(data.title || '').slice(0, 200)}`,
+            video: { url: data.videoUrl },
+            caption: `🎬 *TikTok Download*\n\n👤 Author: ${data.author || 'Unknown'}\n📝 Title: ${(data.title || '').slice(0, 200)}`,
           });
           await ctx.m.react('✅').catch(() => {});
         } catch (err: any) {
@@ -150,12 +164,16 @@ export default function downloadCommands(): Command[] {
         await ctx.m.react('⏳').catch(() => {});
         try {
           const response = await fetch(
-            `https://api.downloaderapi.com/instagram?url=${encodeURIComponent(ctx.text)}`
+            `https://api.downloaderapi.com/instagram?url=${encodeURIComponent(ctx.text)}`,
+            { signal: AbortSignal.timeout(25000) }
           );
           const data: any = await response.json();
-          if (!data.url_list?.length) throw new Error('Failed to get media');
+          const urls: string[] = data.url_list || [];
+          if (!urls.length) {
+            throw new Error('Failed to get media (Instagram may require login for this post)');
+          }
 
-          for (const url of data.url_list.slice(0, 4)) {
+          for (const url of urls.slice(0, 4)) {
             if (url.includes('.mp4')) {
               await ctx.m.send({ video: { url } });
             } else {

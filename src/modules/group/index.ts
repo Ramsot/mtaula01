@@ -106,23 +106,23 @@ export default function groupCommands(): Command[] {
       },
     },
     {
-      name: 'setname',
-      aliases: ['groupname'],
+      name: 'groupname',
+      aliases: ['setgroupname', 'gname'],
       category: 'group',
       description: 'Change group name',
-      example: '.setname New Group Name',
+      example: '.groupname New Group Name',
       execute: async (ctx: CommandContext) => {
         if (!ctx.isGroup) return ctx.m.reply('❌ Group only!');
         if (!ctx.isAdmin) return ctx.m.reply('❌ Admin only!');
         if (!ctx.isBotAdmin) return ctx.m.reply('❌ Bot needs admin!');
-        if (!ctx.text) return ctx.m.reply(`Usage: ${ctx.prefix}setname <new name>`);
+        if (!ctx.text) return ctx.m.reply(`Usage: ${ctx.prefix}groupname <new name>`);
         await ctx.sock.groupUpdateSubject(ctx.m.from, ctx.text);
         await ctx.m.reply(`✅ Group name changed to: ${ctx.text}`);
       },
     },
     {
       name: 'setdesc',
-      aliases: ['groupdesc'],
+      aliases: ['groupdesc', 'gdesc'],
       category: 'group',
       description: 'Change group description',
       example: '.setdesc New description',

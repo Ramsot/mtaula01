@@ -69,7 +69,7 @@ export default function infoCommands(): Command[] {
     },
     {
       name: 'info',
-      aliases: ['botinfo', 'bot'],
+      aliases: ['botinfo'],
       category: 'main',
       description: 'Show bot information',
       execute: async (ctx: CommandContext) => {
@@ -84,7 +84,7 @@ export default function infoCommands(): Command[] {
           `⚙️ Runtime: Node.js ${process.version}\n` +
           `💾 Memory: ${formatBytes(mem.heapUsed)}\n` +
           `⏰ Uptime: ${formatUptime(process.uptime())}\n` +
-          `📊 Commands: ${ctx.sock ? 'loaded' : 'loading...'}`
+          `📊 Commands: ${ctx.registry.getAll().length}`
         );
       },
     },
@@ -114,16 +114,34 @@ export default function infoCommands(): Command[] {
     },
     {
       name: 'menu',
-      aliases: ['help', 'commands', 'allmenu'],
+      aliases: ['commands', 'allmenu'],
       category: 'main',
       description: 'Show all available commands',
-      example: '.menu | .menu ai',
+      example: '.menu | .menu ai | .menu ping',
       execute: async (ctx: CommandContext) => {
-        const registry = (ctx.sock as any)._botRegistry;
-        const allCommands = registry?.getAll() || [];
-        const grouped = registry?.getByCategory() || new Map();
+        const allCommands = ctx.registry.getAll();
+        const grouped = ctx.registry.getByCategory();
 
         const filter = ctx.args[0]?.toLowerCase();
+
+        if (filter) {
+          // `.menu <command>` → show details for that command
+          const one = ctx.registry.find(filter);
+          if (one && !grouped.has(filter)) {
+            let help = `📖 *${config.PREFIX}${one.name}*\n\n`;
+            help += `📝 Description: ${one.description}\n`;
+            if (one.aliases?.length) help += `🔗 Aliases: ${one.aliases.join(', ')}\n`;
+            if (one.usage) help += `📋 Usage: ${one.usage}\n`;
+            if (one.example) help += `💡 Example: ${one.example}\n`;
+            help += `📂 Category: ${CATEGORY_LABELS[one.category] || one.category}`;
+            await ctx.m.reply(help);
+            return;
+          }
+          if (!grouped.has(filter)) {
+            await ctx.m.reply(`❓ No category or command named "${filter}".\nTry ${config.PREFIX}menu`);
+            return;
+          }
+        }
 
         let menu = `┌─❍ *${config.BOT_NAME}*
 │ 📱 Prefix: ${config.PREFIX}
@@ -161,7 +179,7 @@ export default function infoCommands(): Command[] {
       description: 'Get help for a specific command',
       example: '.help ping',
       execute: async (ctx: CommandContext) => {
-        const registry = (ctx.sock as any)._botRegistry;
+        const registry = ctx.registry;
         if (!ctx.args[0]) {
           await ctx.m.reply(`💡 Use ${config.PREFIX}menu to see all commands.\nUse ${config.PREFIX}help <command> for details.`);
           return;

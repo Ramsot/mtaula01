@@ -11,8 +11,9 @@ export default function searchCommands(): Command[] {
       execute: async (ctx: CommandContext) => {
         if (!ctx.text) return ctx.m.reply(`Usage: ${ctx.prefix}google <query>`);
         try {
-          // @ts-ignore
-          const { googleIt } = await import('google-it');
+          // google-it exposes a default-exported function (CJS module.exports)
+          const mod: any = await import('google-it');
+          const googleIt = mod.default || mod.googleIt;
           const results: any[] = await googleIt({ query: ctx.text, limit: 5 });
           if (!results.length) return ctx.m.reply('❌ No results found');
 
@@ -35,16 +36,16 @@ export default function searchCommands(): Command[] {
       execute: async (ctx: CommandContext) => {
         if (!ctx.text) return ctx.m.reply(`Usage: ${ctx.prefix}yts <query>`);
         try {
-          const play = (await import('play-dl')).default;
-          const results = await play.search(ctx.text, { limit: 5 });
+          const { ytSearch } = await import('../../utils/youtube.js');
+          const results = await ytSearch(ctx.text, 5);
           if (!results.length) return ctx.m.reply('❌ No results found');
 
           let text = `🎬 *YouTube Results*\n\n`;
           for (const [i, video] of results.entries()) {
             text += `${i + 1}. *${video.title}*\n`;
-            text += `   👤 ${video.channel?.name || 'Unknown'}\n`;
-            text += `   👁️ ${video.views?.toLocaleString() || 'N/A'} views\n`;
-            text += `   ⏱️ ${video.durationRaw || 'N/A'}\n`;
+            text += `   👤 ${video.channel}\n`;
+            if (video.views) text += `   👁️ ${video.views.toLocaleString()} views\n`;
+            if (video.durationRaw) text += `   ⏱️ ${video.durationRaw}\n`;
             text += `   🔗 ${video.url}\n\n`;
           }
           await ctx.m.reply(text);
@@ -62,9 +63,10 @@ export default function searchCommands(): Command[] {
       execute: async (ctx: CommandContext) => {
         if (!ctx.text) return ctx.m.reply(`Usage: ${ctx.prefix}lyrics <song title>`);
         try {
-          const Genius = (await import('genius-lyrics')).default;
+          const mod: any = await import('genius-lyrics');
+          const Genius = mod.default;
           const client = new Genius.Client();
-          const songs: any[] = await (client.songs as any).search(ctx.text);
+          const songs: any[] = await client.songs.search(ctx.text);
           if (!songs.length) return ctx.m.reply('❌ No lyrics found');
 
           const song = songs[0];
@@ -88,7 +90,8 @@ export default function searchCommands(): Command[] {
       execute: async (ctx: CommandContext) => {
         if (!ctx.text) return ctx.m.reply(`Usage: ${ctx.prefix}wikipedia <topic>`);
         try {
-          const wiki = (await import('wikipedia')).default;
+          const mod: any = await import('wikipedia');
+          const wiki = mod.default;
           const page = await wiki.summary(ctx.text, { autoSuggest: true });
           await ctx.m.reply(
             `📚 *${page.title}*\n\n` +
@@ -139,21 +142,18 @@ export default function searchCommands(): Command[] {
       example: '.pinterest beautiful sunset',
       execute: async (ctx: CommandContext) => {
         if (!ctx.text) return ctx.m.reply(`Usage: ${ctx.prefix}pinterest <query>`);
+        // Pinterest's API is auth-only; send a random related image + the search link.
+        const q = encodeURIComponent(ctx.text);
         try {
-          const response = await fetch(
-            `https://api.pinterest.com/v5/search/pins?query=${encodeURIComponent(ctx.text)}&limit=5`
-          );
-          // Pinterest API requires auth, so we'll use a fallback
+          await ctx.m.send({
+            image: { url: `https://loremflickr.com/800/600/${q}` },
+            caption:
+              `📌 *Pinterest Search*\n\n🔍 ${ctx.text}\n\n` +
+              `🔗 https://www.pinterest.com/search/pins/?q=${q}`,
+          });
+        } catch {
           await ctx.m.reply(
-            `📌 *Pinterest Search*\n\n` +
-            `🔍 ${ctx.text}\n\n` +
-            `🔗 Search: https://www.pinterest.com/search/pins/?q=${encodeURIComponent(ctx.text)}`
-          );
-        } catch (err: any) {
-          await ctx.m.reply(
-            `📌 *Pinterest*\n\n` +
-            `🔍 ${ctx.text}\n\n` +
-            `🔗 https://www.pinterest.com/search/pins/?q=${encodeURIComponent(ctx.text)}`
+            `📌 *Pinterest*\n\n🔍 ${ctx.text}\n\n🔗 https://www.pinterest.com/search/pins/?q=${q}`
           );
         }
       },
@@ -166,13 +166,11 @@ export default function searchCommands(): Command[] {
       example: '.wallpaper nature',
       execute: async (ctx: CommandContext) => {
         const query = ctx.text || 'nature';
+        // source.unsplash.com was shut down; picsum is a stable free source.
+        const seed = encodeURIComponent(query.replace(/\s+/g, '-').toLowerCase());
         try {
-          const response = await fetch(
-            `https://api.unsplash.com/photos/random?query=${encodeURIComponent(query)}&client_id=demo`
-          );
-          // Fallback to a static source
           await ctx.m.send({
-            image: { url: `https://source.unsplash.com/random/1920x1080/?${encodeURIComponent(query)}` },
+            image: { url: `https://picsum.photos/seed/${seed}/1920/1080` },
             caption: `🖼️ Wallpaper: ${query}`,
           });
         } catch {

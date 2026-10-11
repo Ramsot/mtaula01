@@ -1,5 +1,28 @@
 import type { Command, CommandContext } from '../../core/types.js';
 
+/**
+ * Translate via translatte when available, falling back to Google's gtx
+ * endpoint (translatte's token grabber has been failing lately).
+ */
+async function translateText(text: string, to: string): Promise<string> {
+  try {
+    const translatte = (await import('translatte')).default;
+    const result = await translatte(text, { to });
+    if (result?.text) return result.text;
+  } catch {}
+
+  const res = await fetch(
+    'https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto' +
+      `&tl=${encodeURIComponent(to)}&dt=t&q=${encodeURIComponent(text)}`,
+    { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(15000) }
+  );
+  if (!res.ok) throw new Error(`translate HTTP ${res.status}`);
+  const data: any = await res.json();
+  const translated = (data?.[0] || []).map((s: any) => s?.[0] || '').join('');
+  if (!translated) throw new Error('No translation returned');
+  return translated;
+}
+
 export default function toolCommands(): Command[] {
   return [
     {
@@ -31,7 +54,8 @@ export default function toolCommands(): Command[] {
           const { getAudioUrl } = await import('google-tts-api');
           const lang = ctx.args[0]?.length === 2 && /^[a-z]{2}$/.test(ctx.args[0]) ? ctx.args[0] : 'en';
           const text = ctx.args[0]?.length === 2 && /^[a-z]{2}$/.test(ctx.args[0]) ? ctx.args.slice(1).join(' ') : ctx.text;
-          const url = getAudioUrl(text, { lang, slow: false });
+          if (!text) return ctx.m.reply(`Usage: ${ctx.prefix}tts <text>`);
+          const url = getAudioUrl(text.slice(0, 200), { lang, slow: false });
           await ctx.m.send({ audio: { url }, mimetype: 'audio/mpeg' });
         } catch (err: any) {
           await ctx.m.reply(`❌ TTS error: ${err?.message}`);
@@ -43,18 +67,17 @@ export default function toolCommands(): Command[] {
       aliases: ['translate'],
       category: 'tools',
       description: 'Translate text',
+      usage: '.trt <lang> <text>',
       example: '.trt en Hello world',
       execute: async (ctx: CommandContext) => {
         if (!ctx.args[0] || !ctx.text) {
           return ctx.m.reply(`Usage: ${ctx.prefix}trt <lang> <text>\nExample: ${ctx.prefix}trt sw Hello`);
         }
+        const lang = ctx.args[0];
+        const text = ctx.args.slice(1).join(' ');
         try {
-          // @ts-ignore
-          const translatte = (await import('translatte')).default;
-          const lang = ctx.args[0];
-          const text = ctx.args.slice(1).join(' ');
-          const result = await translatte(text, { to: lang });
-          await ctx.m.reply(`🌐 *Translation* (${lang})\n\n${result.text}`);
+          const result = await translateText(text, lang);
+          await ctx.m.reply(`🌐 *Translation* (${lang})\n\n${result}`);
         } catch (err: any) {
           await ctx.m.reply(`❌ Translation error: ${err?.message}`);
         }
@@ -127,20 +150,37 @@ export default function toolCommands(): Command[] {
       name: 'tempmail',
       aliases: ['tmpmail'],
       category: 'tools',
-      description: 'Get a temporary email address',
+      description: 'Create a real temporary email inbox',
       execute: async (ctx: CommandContext) => {
         try {
-          const response = await fetch('https://api.mail.tm/domains');
+          const response = await fetch('https://api.mail.tm/domains', {
+            signal: AbortSignal.timeout(15000),
+          });
           const data: any = await response.json();
           const domain = data['hydra:member'][0]?.domain;
           if (!domain) throw new Error('No domain available');
+
           const random = Math.random().toString(36).substring(2, 10);
           const email = `${random}@${domain}`;
+          const password = Math.random().toString(36).slice(2) + 'A1!';
+
+          // Actually create the account so the inbox is reachable.
+          const created = await fetch('https://api.mail.tm/accounts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ address: email, password }),
+            signal: AbortSignal.timeout(15000),
+          });
+          if (!created.ok && created.status !== 422) {
+            throw new Error(`mail.tm account creation failed (${created.status})`);
+          }
+
           await ctx.m.reply(
             `📧 *Temporary Email*\n\n` +
-            `Address: ${email}\n\n` +
-            `⚠️ Check inbox at https://mail.tm\n` +
-            `⏰ Valid for ~10 minutes`
+            `Address: ${email}\n` +
+            `Password: ${password}\n\n` +
+            `📥 Read inbox: https://mail.tm (sign in with the address + password)\n` +
+            `⏰ Inactive accounts are deleted after ~10 days`
           );
         } catch (err: any) {
           await ctx.m.reply(`❌ Error: ${err?.message}`);
@@ -188,13 +228,15 @@ export default function toolCommands(): Command[] {
       execute: async (ctx: CommandContext) => {
         if (!ctx.text) return ctx.m.reply(`Usage: ${ctx.prefix}urlpreview <url>`);
         try {
-          // @ts-ignore
-          const { getPreviewFromContent } = await import('link-preview-js');
-          const preview: any = await getPreviewFromContent({ headers: {} } as any, { url: ctx.text } as any);
+          const mod: any = await import('link-preview-js');
+          const getLinkPreview = mod.getLinkPreview || mod.default?.getLinkPreview;
+          if (!getLinkPreview) throw new Error('link-preview-js unavailable');
+
+          const preview: any = await getLinkPreview(ctx.text, { timeout: 10000 });
           let text = `🔗 *URL Preview*\n\n📍 URL: ${ctx.text}\n`;
           if (preview.title) text += `📝 Title: ${preview.title}\n`;
           if (preview.description) text += `📄 Description: ${preview.description}\n`;
-          if ((preview as any).siteName) text += `🌐 Site: ${(preview as any).siteName}\n`;
+          if (preview.siteName) text += `🌐 Site: ${preview.siteName}\n`;
           await ctx.m.reply(text);
         } catch (err: any) {
           await ctx.m.reply(`❌ Error: ${err?.message}`);
