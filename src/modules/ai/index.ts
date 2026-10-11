@@ -1,6 +1,6 @@
 import config from '../../config/index.js';
 import type { Command, CommandContext } from '../../core/types.js';
-import { askAI, type ChatTurn } from '../../core/ai.js';
+import { askAI, availableAiEngines, type ChatTurn } from '../../core/ai.js';
 
 const AI_HISTORY = new Map<string, ChatTurn[]>();
 const MAX_HISTORY = 20;
@@ -55,10 +55,12 @@ export default function aiCommands(): Command[] {
           await ctx.m.react('✅').catch(() => {});
         } catch (err: any) {
           await ctx.m.react('❌').catch(() => {});
-          await ctx.m.reply(
-            `❌ AI error: ${err?.message || 'unknown'}\n\n` +
-            `💡 Make sure GEMINI_KEY or GROQ_KEY is set in the bot config.`
-          );
+          const engines = availableAiEngines();
+          const hint = engines.length
+            ? `Configured engines: ${engines.join(', ')}.`
+            : `No API keys found. Set GEMINI_KEY or GROQ_KEY in the environment\n` +
+              `(on Render: Settings → Environment — a local .env file is NOT deployed).`;
+          await ctx.m.reply(`❌ AI error: ${err?.message || 'unknown'}\n\n💡 ${hint}`);
         }
       },
     },

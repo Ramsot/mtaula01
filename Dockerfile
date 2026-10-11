@@ -25,11 +25,12 @@ RUN npm run build
 ENV NODE_ENV=production
 ENV PORT=3000
 
-# Drop root privileges for the bot process.
-RUN useradd --system --create-home --uid 1001 mtaula \
-  && mkdir -p /app/auth_info_baileys \
-  && chown -R mtaula:mtaula /app
-USER mtaula
+# NOTE: we intentionally stay root here. Render mounts the session Disk at
+# SESSION_DIR (e.g. /data/auth_info_baileys) owned by root and does not chown
+# it at runtime; a non-root USER cannot write there, so the WhatsApp session
+# would be lost on every deploy and force a re-pair. The process binds no
+# privileged ports (default 3000), and isolation here is provided by the
+# container itself.
 
 EXPOSE 3000
 

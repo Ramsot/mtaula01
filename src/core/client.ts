@@ -313,6 +313,11 @@ export class BotClient extends EventEmitter {
 
     logger.info({ cmd, sender: m.sender, from: m.from, isGroup: m.isGroup }, 'Command received');
 
+    // Acknowledge immediately so the sender sees a read tick + "typing..."
+    // instead of "waiting for this message" while the command runs.
+    await this.sock.readMessages([m.key]).catch(() => {});
+    await this.sock.sendPresenceUpdate('composing', m.from).catch(() => {});
+
     const command = this.registry.find(cmd);
     if (!command) {
       await m.reply(`Unknown command: ${prefix}${cmd}\nType ${prefix}menu for available commands.`).catch(() => {});
@@ -339,6 +344,9 @@ export class BotClient extends EventEmitter {
     } catch (err: any) {
       logger.error({ err: err?.message, cmd }, 'Command execution failed');
       await m.reply(`Error: ${err?.message || 'Command failed'}`).catch(() => {});
+    } finally {
+      // Stop the "typing..." indicator once the command finishes.
+      await this.sock.sendPresenceUpdate('paused', m.from).catch(() => {});
     }
   }
 

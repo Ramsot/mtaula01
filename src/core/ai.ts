@@ -33,7 +33,31 @@ function timed<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   ]);
 }
 
-/** Fast cloud engines first (Gemini -> Groq -> OpenAI), Meta AI channel last. */
+/** Which cloud engines actually have a key configured. */
+export function availableAiEngines(): string[] {
+  const out: string[] = [];
+  if (config.GEMINI_KEY) out.push('gemini');
+  if (config.GROQ_KEY) out.push('groq');
+  if (config.OPENAI_KEY) out.push('openai');
+  return out;
+}
+
+/** One-line, key-safe summary for logs (never prints the key itself). */
+export function aiDiagnostics(): Record<string, string | boolean> {
+  const mask = (k: string) => (k ? `set(${k.length} chars)` : 'MISSING');
+  return {
+    GEMINI_KEY: mask(config.GEMINI_KEY),
+    GROQ_KEY: mask(config.GROQ_KEY),
+    OPENAI_KEY: mask(config.OPENAI_KEY),
+    META_AI_NUMBER: config.META_AI_NUMBER || 'MISSING',
+    engines: availableAiEngines().join(',') || 'none',
+  };
+}
+
+/**
+ * Fast cloud engines first (Gemini -> Groq -> OpenAI), Meta AI channel last.
+ * Fails FAST when nothing is configured instead of hanging on Meta AI.
+ */
 export async function askAI(
   sock: any,
   prompt: string,
@@ -46,20 +70,40 @@ export async function askAI(
     ['meta-ai', () => callMetaAI(sock, prompt, history)],
   ];
 
+  const hasCloudKey = availableAiEngines().length > 0;
+  const canUseMetaAI = !!sock && !!config.META_AI_NUMBER;
+
+  // Nothing to try: fail immediately with an actionable message rather than
+  // making the user wait on Meta AI timeouts that will never succeed.
+  if (!hasCloudKey && !canUseMetaAI) {
+    throw new Error(
+      'No AI engine configured. Set GEMINI_KEY, GROQ_KEY, or OPENAI_KEY in your environment '
+      + '(on Render: Settings → Environment, not a local .env file).'
+    );
+  }
+
   let lastError: Error | null = null;
   for (const [name, run] of engines) {
+    // Skip Meta AI when we already know there is no point (keeps failures fast).
+    if (name === 'meta-ai' && !canUseMetaAI) continue;
     try {
-      const result = await timed(run(), 30000, name);
+      const result = await timed(run(), 20000, name);
       if (result && result.trim()) {
         logger.info({ engine: name, chars: result.length }, 'AI reply generated');
         return { text: result.trim(), engine: name };
       }
+      // A key was set but returned nothing — record it so the final error is useful.
+      lastError = lastError || new Error(`${name} returned an empty response`);
     } catch (err: any) {
       lastError = err;
       logger.warn({ engine: name, err: err?.message }, 'AI engine failed, trying next');
     }
   }
-  throw lastError || new Error('No AI engine available (set GEMINI_KEY or GROQ_KEY)');
+
+  const detail = availableAiEngines().length
+    ? `Tried engines: ${engines.map(([n]) => n).join(', ')}. Last error: ${lastError?.message || 'unknown'}`
+    : 'No GEMINI_KEY / GROQ_KEY / OPENAI_KEY is set.';
+  throw new Error(`AI failed. ${detail}`);
 }
 
 export async function callGemini(
@@ -88,9 +132,16 @@ export async function callGemini(
       body: JSON.stringify({
         contents,
         systemInstruction: { parts: [{ text: AI_SYSTEM_PROMPT }] },
-        generationConfig: { maxOutputTokens: 2048, temperature: 0.8 },
+        generationConfig: {
+          maxOutputTokens: 2048,
+          temperature: 0.8,
+          // Gemini 3.x is a "thinking" model; disabling the thinking budget
+          // keeps replies fast for chat (it was blowing past the timeout and
+          // forcing a fallback to Groq, adding ~20s of latency).
+          thinkingConfig: { thinkingBudget: 0 },
+        },
       }),
-      signal: AbortSignal.timeout(25000),
+      signal: AbortSignal.timeout(20000),
     }
   );
 
@@ -235,7 +286,7 @@ export async function callMetaAI(
       const sent = await sock.sendMessage(aiJid, { text: prompt });
       if (!sent?.key?.id) continue;
 
-      const response = await waitForAIReply(sock, sent.key.id, aiNum, 12000);
+      const response = await waitForAIReply(sock, sent.key.id, aiNum, 9000);
       if (response) return response;
     } catch (err: any) {
       logger.warn({ aiJid, err: err?.message }, 'Meta AI attempt failed');
