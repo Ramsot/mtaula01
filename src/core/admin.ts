@@ -96,11 +96,20 @@ async function ensureDataDir(): Promise<void> {
  * never leave a truncated users.json behind (which would silently wipe every
  * account on the next boot).
  */
+// Serialize writes per file so overlapping saves cannot interleave, and use a
+// unique temp name so concurrent writes never collide on rename.
+const writeQueues = new Map<string, Promise<void>>();
+
 async function writeJson(file: string, data: unknown): Promise<void> {
   await ensureDataDir();
-  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
-  await fs.writeFile(tmp, JSON.stringify(data, null, 2));
-  await fs.rename(tmp, file);
+  const prev = writeQueues.get(file) ?? Promise.resolve();
+  const next = prev.catch(() => {}).then(async () => {
+    const tmp = `${file}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
+    await fs.writeFile(tmp, JSON.stringify(data, null, 2));
+    await fs.rename(tmp, file);
+  });
+  writeQueues.set(file, next.catch(() => {}));
+  await next;
 }
 
 async function readJson<T>(file: string, fallback: T): Promise<T> {

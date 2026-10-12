@@ -44,12 +44,22 @@ function pairingsFilePath(): string {
   return path.join(config.DATA_DIR, 'pairings.json');
 }
 
+// Serialize writes per file: verifyPairing() fires saves without awaiting, so
+// two writes can overlap. Without a queue they could interleave, and a shared
+// temp name would make the second rename fail with ENOENT.
+const writeQueues = new Map<string, Promise<void>>();
+
 async function persist(pairings: Pairing[]): Promise<void> {
   await fs.mkdir(config.DATA_DIR, { recursive: true });
   const file = pairingsFilePath();
-  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
-  await fs.writeFile(tmp, JSON.stringify(pairings, null, 2));
-  await fs.rename(tmp, file);
+  const prev = writeQueues.get(file) ?? Promise.resolve();
+  const next = prev.catch(() => {}).then(async () => {
+    const tmp = `${file}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
+    await fs.writeFile(tmp, JSON.stringify(pairings, null, 2));
+    await fs.rename(tmp, file);
+  });
+  writeQueues.set(file, next.catch(() => {}));
+  await next;
 }
 
 export class PairingStore {
