@@ -97,7 +97,46 @@ async function main() {
     logger.error({ reason }, 'Unhandled rejection');
   });
 
+  startKeepAlive(bot);
+
   await bot.connect();
+}
+
+/**
+ * Render free tier sleeps after ~15 min with no inbound HTTP traffic. When the
+ * service sleeps the Baileys socket dies mid-session and the next wake-up often
+ * lands on a corrupted signal session ("Bad MAC") that requires a full re-pair.
+ *
+ * Three layers keep it awake:
+ *  1. Self-ping to /health every 9 min (inbound HTTP counts as activity).
+ *  2. Outbound WhatsApp presence ping every 4 min (keeps the WA socket warm so
+ *     it is not dropped as idle even if the HTTP layer is quiet).
+ *  3. An optional external monitor (UptimeRobot / cron-job.org) hitting /health
+ *     every 5 min as a belt-and-braces backstop.
+ */
+function startKeepAlive(bot: BotClient): void {
+  const SELF_PING_MS = 9 * 60 * 1000;
+  const WA_PING_MS = 4 * 60 * 1000;
+
+  const selfPing = setInterval(() => {
+    const url = `http://127.0.0.1:${config.PORT}/health`;
+    fetch(url, { signal: AbortSignal.timeout(10000) })
+      .then(r => logger.debug({ status: r.status }, 'Keepalive self-ping'))
+      .catch(err => logger.warn({ err: err?.message }, 'Keepalive self-ping failed'));
+  }, SELF_PING_MS);
+  selfPing.unref();
+
+  const waPing = setInterval(() => {
+    const sock = bot.getSocket();
+    if (!sock?.user?.id) return;
+    sock.sendPresenceUpdate('available').catch(() => {});
+  }, WA_PING_MS);
+  waPing.unref();
+
+  logger.info(
+    { selfPingMin: SELF_PING_MS / 60000, waPingMin: WA_PING_MS / 60000 },
+    'Keepalive started'
+  );
 }
 
 main().catch((err) => {

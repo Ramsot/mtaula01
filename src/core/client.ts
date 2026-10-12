@@ -20,6 +20,7 @@ export class BotClient extends EventEmitter {
   private sock: WASocket | null = null;
   private isConnecting = false;
   private registered = false;
+  private reconnectAttempts = 0;
   private connectionState = 'close';
   private lastError: string | null = null;
   private currentQr: string | null = null;
@@ -172,10 +173,13 @@ export class BotClient extends EventEmitter {
           logger.warn({ statusCode, shouldReconnect }, 'Connection closed');
 
           if (shouldReconnect) {
+            this.reconnectAttempts++;
+            const delay = Math.min(5000 * 2 ** Math.min(this.reconnectAttempts, 4), 60000);
+            logger.info({ attempt: this.reconnectAttempts, delayMs: delay }, 'Reconnecting');
             setTimeout(() => {
               this.isConnecting = false;
               this.connect().catch(() => {});
-            }, 5000);
+            }, delay);
           } else {
             logger.error('Logged out - session invalid, reset needed');
             this.emit('loggedOut');
@@ -183,6 +187,7 @@ export class BotClient extends EventEmitter {
         } else if (connection === 'open') {
           this.connectionState = 'open';
           this.isConnecting = false;
+          this.reconnectAttempts = 0;
           this.lastError = null;
           this.registered = true;
           this.currentQr = null;
