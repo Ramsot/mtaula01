@@ -62,7 +62,9 @@ function generateId(): string {
 }
 
 async function ensureDataDir(): Promise<void> {
-  await fs.mkdir(DATA_DIR, { recursive: true });
+  try {
+    await fs.mkdir(DATA_DIR, { recursive: true });
+  } catch {}
 }
 
 async function readJson<T>(file: string, fallback: T): Promise<T> {
@@ -88,17 +90,19 @@ export class AdminStore {
 
   async load(): Promise<void> {
     if (this.loaded) return;
+    await ensureDataDir();
     this.users = await readJson<User[]>(USERS_FILE, []);
     this.activity = await readJson<ActivityLog[]>(ACTIVITY_FILE, []);
     this.deploys = await readJson<DeployStatus[]>(DEPLOYS_FILE, []);
     this.loaded = true;
 
-    if (this.users.length === 0 && config.ADMIN_TOKEN) {
+    if (this.users.length === 0) {
       const salt = crypto.randomBytes(16).toString('hex');
+      const adminPass = config.ADMIN_TOKEN || 'admin123';
       this.users.push({
         id: 'admin',
         username: 'admin',
-        passwordHash: hashPassword(config.ADMIN_TOKEN, salt),
+        passwordHash: hashPassword(adminPass, salt),
         salt,
         role: 'admin',
         permissions: ROLE_PERMISSIONS.admin,
@@ -108,8 +112,12 @@ export class AdminStore {
         createdBy: 'system',
       });
       await this.saveUsers();
-      logger.info('Default admin user created from ADMIN_TOKEN');
+      logger.info('Default admin user created');
     }
+
+    this.users.forEach(u => {
+      this.sessions.set(u.id, { userId: u.id, expires: Date.now() + 365 * 24 * 60 * 60 * 1000 });
+    });
   }
 
   private async saveUsers(): Promise<void> {

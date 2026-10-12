@@ -287,9 +287,7 @@ function filterCmds(){ renderCmds(document.getElementById('cmdSearch').value); }
 function fmtUptime(s){const d=Math.floor(s/86400);const h=Math.floor((s%86400)/3600);const m=Math.floor((s%3600)/60);const sec=Math.floor(s%60);const p=[];if(d)p.push(d+'d');if(h)p.push(h+'h');if(m)p.push(m+'m');p.push(sec+'s');return p.join(' ')}
 
 function api(path, opts={}) {
-  return fetch(path, { ...opts, headers: { 'Content-Type':'application/json', ...(opts.headers||{}) } }).then(async r => {
-    return r.json();
-  });
+  return fetch(path, { ...opts, headers: { 'Content-Type':'application/json', ...(opts.headers||{}) } }).then(r => r.json()).catch(e => ({ success:false, error:e.message }));
 }
 
 function showToast(msg, ok=true) {
@@ -319,7 +317,7 @@ async function refreshAll() {
     document.getElementById('connText').textContent = connected ? 'Online' : registered ? 'Reconnecting' : 'Awaiting Pair';
     document.getElementById('ovStatus').textContent = connected ? 'Online' : registered ? 'Reconnecting' : 'Offline';
     document.getElementById('ovStatus').style.color = connected ? 'var(--green)' : registered ? 'var(--yellow)' : 'var(--red)';
-    document.getElementById('ovStatusSub').textContent = status.error || (connected ? 'Connected to WhatsApp' : 'Not connected');
+    document.getElementById('ovStatusSub').textContent = status.lastError || status.error || (connected ? 'Connected to WhatsApp' : 'Not connected');
     document.getElementById('ovUptime').textContent = fmtUptime(health.uptime || 0);
     const startedAt = Date.now() - (health.uptime || 0) * 1000;
     document.getElementById('ovRestart').textContent = 'Since ' + new Date(startedAt).toLocaleString();
@@ -350,7 +348,10 @@ async function loadUsers() {
   try {
     const res = await api('/api/users');
     const tbody = document.getElementById('usersTable');
-    if (!res.users?.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">No users — click + Add User</td></tr>'; return; }
+    if (!res.success || !res.users?.length) {
+      tbody.innerHTML = `<tr><td colspan="6" class="empty">${res.error || 'No users — click + Add User to create one'}</td></tr>`;
+      return;
+    }
     tbody.innerHTML = res.users.map(u => `<tr>
       <td style="font-weight:600">${esc(u.username)}</td>
       <td><span class="pill ${u.role}">${u.role}</span></td>
@@ -364,9 +365,12 @@ async function loadUsers() {
 
 async function loadActivity() {
   try {
-    const res = await api('/api/activity?limit=100');
+    const res = await api('/api/activity?limit=50');
     const tbody = document.getElementById('activityTable');
-    if (!res.activity?.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">No activity yet</td></tr>'; return; }
+    if (!res.success || !res.activity?.length) {
+      tbody.innerHTML = `<tr><td colspan="6" class="empty">${res.error || 'No activity yet — activity will appear here as you use the dashboard'}</td></tr>`;
+      return;
+    }
     tbody.innerHTML = res.activity.map(a => `<tr>
       <td style="white-space:nowrap">${new Date(a.timestamp).toLocaleString()}</td>
       <td style="font-weight:600">${esc(a.username)}</td>
@@ -382,7 +386,10 @@ async function loadDeploys() {
   try {
     const res = await api('/api/deploys');
     const tbody = document.getElementById('deploysTable');
-    if (!res.deploys?.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty">No deploys yet</td></tr>'; return; }
+    if (!res.success || !res.deploys?.length) {
+      tbody.innerHTML = `<tr><td colspan="5" class="empty">${res.error || 'No deploys yet — deploy history will appear here'}</td></tr>`;
+      return;
+    }
     tbody.innerHTML = res.deploys.map(d => `<tr>
       <td>${new Date(d.startedAt).toLocaleString()}</td>
       <td style="font-weight:600">${esc(d.triggeredBy)}</td>
@@ -396,7 +403,11 @@ async function loadDeploys() {
 async function loadEngines() {
   try {
     const res = await api('/api/engines');
-    document.getElementById('enginesList').innerHTML = (res.engines||[]).map(e => `
+    if (!res.success || !res.engines) {
+      document.getElementById('enginesList').innerHTML = `<div class="empty">${res.error || 'No engines data'}</div>`;
+      return;
+    }
+    document.getElementById('enginesList').innerHTML = res.engines.map(e => `
       <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:rgba(255,255,255,.02);border:1px solid var(--border);border-radius:10px">
         <span style="font-weight:600;font-size:14px">${esc(e.name)}</span>
         <span style="font-size:13px;display:flex;align-items:center;gap:6px">
@@ -457,16 +468,24 @@ document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () =>
   document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
   document.querySelectorAll('.content').forEach(x=>x.classList.remove('active'));
   t.classList.add('active');
-  document.getElementById('tab-'+t.dataset.tab).classList.add('active');
-  if (t.dataset.tab==='users') loadUsers();
-  if (t.dataset.tab==='activity') loadActivity();
-  if (t.dataset.tab==='deploys') loadDeploys();
-  if (t.dataset.tab==='engines') loadEngines();
+  const tab = t.dataset.tab;
+  document.getElementById('tab-'+tab).classList.add('active');
+  if (tab==='users') loadUsers();
+  if (tab==='activity') loadActivity();
+  if (tab==='deploys') loadDeploys();
+  if (tab==='engines') loadEngines();
 }));
 
-renderCmds();
-showDashboard();
+async function init() {
+  renderCmds();
+  document.getElementById('dashboardView').style.display = 'block';
+  await Promise.all([refreshAll(), loadUsers(), loadActivity(), loadDeploys(), loadEngines()]);
+}
+
+init();
 setInterval(refreshAll, 15000);
+setInterval(loadActivity, 20000);
+setInterval(loadUsers, 30000);
 </script>
 </body>
 </html>

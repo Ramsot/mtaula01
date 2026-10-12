@@ -53,7 +53,19 @@ export function createWebServer(bot: BotClient): express.Application {
   });
 
   app.get('/api/status', (_req, res) => {
-    res.json(bot.getState());
+    const s = bot.getState();
+    res.json({
+      connected: s.connected,
+      registered: s.registered,
+      state: s.connectionState,
+      jid: s.user,
+      pushName: null,
+      lastError: s.lastError,
+      error: s.lastError,
+      mode: s.mode,
+      prefix: s.prefix,
+      uptime: s.uptime,
+    });
   });
 
   app.get('/api/qr', async (_req, res) => {
@@ -237,7 +249,7 @@ export function createWebServer(bot: BotClient): express.Application {
 
     const allowed = [
       'npm run build', 'npm run typecheck', 'npm test',
-      'git status', 'git log --oneline -5', 'git diff --stat',
+      'git status', 'git log', 'git diff',
       'ls -la', 'whoami', 'date', 'uptime', 'df -h',
       'node -e "console.log(process.uptime())"',
     ];
