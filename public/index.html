@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mtaula 01 — Dashboard</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0e1a;
+      --card: #111827;
+      --card-hover: #1a2236;
+      --border: #1e293b;
+      --text: #e2e8f0;
+      --text-dim: #94a3b8;
+      --accent: #6366f1;
+      --accent-glow: rgba(99,102,241,.25);
+      --green: #22c55e;
+      --green-bg: rgba(34,197,94,.12);
+      --red: #ef4444;
+      --red-bg: rgba(239,68,68,.12);
+      --yellow: #eab308;
+      --yellow-bg: rgba(234,179,8,.12);
+      --blue: #3b82f6;
+      --blue-bg: rgba(59,130,246,.12);
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    .header {
+      max-width: 1100px;
+      margin: 0 auto 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .logo {
+      width: 48px;
+      height: 48px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, var(--accent), #8b5cf6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      box-shadow: 0 0 24px var(--accent-glow);
+    }
+
+    .header h1 { font-size: 22px; font-weight: 700; }
+    .header .sub { font-size: 13px; color: var(--text-dim); margin-top: 2px; }
+
+    .live-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--green-bg);
+      border: 1px solid rgba(34,197,94,.3);
+      padding: 8px 16px;
+      border-radius: 24px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--green);
+    }
+
+    .live-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(34,197,94,.4); }
+      50% { opacity: .7; box-shadow: 0 0 0 8px rgba(34,197,94,0); }
+    }
+
+    .grid {
+      max-width: 1100px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px;
+      transition: border-color .2s, transform .2s;
+    }
+
+    .card:hover {
+      border-color: rgba(99,102,241,.3);
+      transform: translateY(-2px);
+    }
+
+    .card-label {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-dim);
+      margin-bottom: 10px;
+      font-weight: 600;
+    }
+
+    .card-value {
+      font-size: 28px;
+      font-weight: 700;
+      line-height: 1.1;
+    }
+
+    .card-sub {
+      font-size: 13px;
+      color: var(--text-dim);
+      margin-top: 6px;
+    }
+
+    .card-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      margin-bottom: 14px;
+    }
+
+    .icon-green { background: var(--green-bg); }
+    .icon-red { background: var(--red-bg); }
+    .icon-yellow { background: var(--yellow-bg); }
+    .icon-blue { background: var(--blue-bg); }
+    .icon-purple { background: var(--accent-glow); }
+
+    .status-ok { color: var(--green); }
+    .status-err { color: var(--red); }
+    .status-warn { color: var(--yellow); }
+    .status-info { color: var(--blue); }
+
+    .panel {
+      max-width: 1100px;
+      margin: 0 auto 24px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px;
+    }
+
+    .panel h2 {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .engines { display: flex; flex-direction: column; gap: 10px; }
+
+    .engine-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      background: rgba(255,255,255,.02);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+
+    .engine-name { font-weight: 600; font-size: 14px; }
+    .engine-status { font-size: 13px; display: flex; align-items: center; gap: 6px; }
+    .engine-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 20px;
+      border-radius: 10px;
+      border: none;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity .2s, transform .1s;
+    }
+    .btn:hover { opacity: .85; }
+    .btn:active { transform: scale(.98); }
+
+    .btn-primary { background: var(--accent); color: white; }
+    .btn-danger { background: var(--red); color: white; }
+    .btn-ghost { background: rgba(255,255,255,.06); color: var(--text); border: 1px solid var(--border); }
+
+    .actions {
+      max-width: 1100px;
+      margin: 0 auto 24px;
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .uptime-bar {
+      max-width: 1100px;
+      margin: 0 auto 24px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 20px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .uptime-info { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+    .uptime-val { font-weight: 700; font-variant-numeric: tabular-nums; }
+
+    .cmd-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 8px;
+    }
+
+    .cmd-chip {
+      background: rgba(255,255,255,.03);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .cmd-chip code {
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .cmd-cat {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      color: var(--text-dim);
+    }
+
+    .search-box {
+      width: 100%;
+      padding: 12px 16px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,.03);
+      color: var(--text);
+      font-size: 14px;
+      margin-bottom: 16px;
+      outline: none;
+      transition: border-color .2s;
+    }
+    .search-box:focus { border-color: var(--accent); }
+    .search-box::placeholder { color: var(--text-dim); }
+
+    footer {
+      max-width: 1100px;
+      margin: 32px auto 0;
+      text-align: center;
+      font-size: 12px;
+      color: var(--text-dim);
+      padding-top: 24px;
+      border-top: 1px solid var(--border);
+    }
+
+    @media (max-width: 600px) {
+      body { padding: 16px; }
+      .header { flex-direction: column; align-items: flex-start; }
+      .card-value { font-size: 22px; }
+      .grid { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div class="header-left">
+      <div class="logo">🤖</div>
+      <div>
+        <h1>Mtaula 01</h1>
+        <div class="sub">WhatsApp Bot Dashboard</div>
+      </div>
+    </div>
+    <div class="live-badge" id="liveBadge">
+      <span class="live-dot"></span>
+      <span id="liveText">Connecting…</span>
+    </div>
+  </div>
+
+  <div class="grid" id="statsGrid">
+    <div class="card">
+      <div class="card-icon icon-purple">⚡</div>
+      <div class="card-label">Status</div>
+      <div class="card-value" id="statusVal">—</div>
+      <div class="card-sub" id="statusSub">Loading…</div>
+    </div>
+    <div class="card">
+      <div class="card-icon icon-blue">⏱️</div>
+      <div class="card-label">Uptime</div>
+      <div class="card-value" id="uptimeVal">—</div>
+      <div class="card-sub" id="uptimeSub">—</div>
+    </div>
+    <div class="card">
+      <div class="card-icon icon-green">📞</div>
+      <div class="card-label">Bot Number</div>
+      <div class="card-value" id="jidVal">—</div>
+      <div class="card-sub" id="jidSub">—</div>
+    </div>
+    <div class="card">
+      <div class="card-icon icon-yellow">🐛</div>
+      <div class="card-label">Commands</div>
+      <div class="card-value" id="cmdVal">—</div>
+      <div class="card-sub">loaded modules</div>
+    </div>
+  </div>
+
+  <div class="uptime-bar">
+    <div class="uptime-info">
+      <span>🕐 Server uptime:</span>
+      <span class="uptime-val" id="serverUptime">—</span>
+    </div>
+    <div class="uptime-info">
+      <span>🔄 Last restart:</span>
+      <span class="uptime-val" id="lastRestart">—</span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>🤖 AI Engines</h2>
+    <div class="engines" id="engines">
+      <div class="engine-row">
+        <span class="engine-name">Meta AI (WhatsApp)</span>
+        <span class="engine-status"><span class="engine-dot" style="background:var(--yellow)"></span>Checking…</span>
+      </div>
+      <div class="engine-row">
+        <span class="engine-name">Gemini 3.8 Flash</span>
+        <span class="engine-status"><span class="engine-dot" style="background:var(--yellow)"></span>Checking…</span>
+      </div>
+      <div class="engine-row">
+        <span class="engine-name">Groq Qwen 3.8</span>
+        <span class="engine-status"><span class="engine-dot" style="background:var(--yellow)"></span>Checking…</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="actions">
+    <a class="btn btn-primary" href="/pair">📱 Pair Device</a>
+    <button class="btn btn-ghost" onclick="copyHealth()">🔗 Copy Health URL</button>
+    <button class="btn btn-ghost" onclick="location.reload()">🔄 Refresh</button>
+  </div>
+
+  <div class="panel">
+    <h2>📋 Commands</h2>
+    <input class="search-box" type="text" placeholder="Search commands…" id="cmdSearch" oninput="filterCmds()">
+    <div class="cmd-grid" id="cmdGrid"></div>
+  </div>
+
+  <footer>
+    Mtaula 01 v2.0.0 · Built with TypeScript + Baileys · <a href="/health" style="color:var(--accent)">/health JSON</a>
+  </footer>
+
+<script>
+const ALL_CMDS = [
+  ['ai','ai','AI'],['ai','clear','AI'],
+  ['antidelete','antidelete','Media'],['antidelete','antideletestatus','Media'],['antidelete','del','Media'],
+  ['autochat','autochat','AI'],['autochat','autochatgroup','AI'],['autochat','setbio','AI'],['autochat','setimg','AI'],
+  ['converter','sticker','Convert'],['converter','toimg','Convert'],['converter','tomp3','Convert'],['converter','tovideo','Convert'],['converter','attp','Convert'],['converter','emojimix','Convert'],['converter','blur','Convert'],
+  ['downloader','play','Download'],['downloader','ytmp4','Download'],['downloader','tiktok','Download'],['downloader','instagram','Download'],['downloader','facebook','Download'],['downloader','twitter','Download'],['downloader','mediafire','Download'],['downloader','gitclone','Download'],['downloader','apk','Download'],
+  ['fun','truth','Fun'],['fun','dare','Fun'],['fun','fact','Fun'],['fun','quote','Fun'],['fun','roast','Fun'],['fun','flirt','Fun'],['fun','8ball','Fun'],['fun','roll','Fun'],['fun','coinflip','Fun'],['fun','ship','Fun'],
+  ['group','tagall','Group'],['group','hidetag','Group'],['group','promote','Group'],['group','demote','Group'],['group','kick','Group'],['group','add','Group'],['group','linkgroup','Group'],['group','setname','Group'],['group','setdesc','Group'],['group','groupinfo','Group'],['group','gcsettings','Group'],
+  ['info','ping','Info'],['info','uptime','Info'],['info','alive','Info'],['info','info','Info'],['info','sysinfo','Info'],['info','menu','Info'],['info','help','Info'],['info','owner','Info'],
+  ['media','saveviewonce','Media'],['media','autovo','Media'],['media','anticviewonce','Media'],
+  ['owner','broadcast','Owner'],['owner','block','Owner'],['owner','unblock','Owner'],['owner','setbotpp','Owner'],['owner','setname','Owner'],['owner','join','Owner'],['owner','leave','Owner'],['owner','autotyping','Owner'],['owner','alwaysonline','Owner'],['owner','autoread','Owner'],['owner','mode','Owner'],['owner','restart','Owner'],
+  ['search','google','Search'],['search','yts','Search'],['search','lyrics','Search'],['search','wikipedia','Search'],['search','imdb','Search'],['search','pinterest','Search'],['search','wallpaper','Search'],
+  ['tools','calc','Tools'],['tools','tts','Tools'],['tools','trt','Tools'],['tools','shorten','Tools'],['tools','base64','Tools'],['tools','hash','Tools'],['tools','tempmail','Tools'],['tools','weather','Tools'],['tools','urlpreview','Tools'],
+];
+
+function renderCmds(filter = '') {
+  const grid = document.getElementById('cmdGrid');
+  const f = filter.toLowerCase();
+  grid.innerHTML = ALL_CMDS
+    .filter(([,cmd,cat]) => !f || cmd.includes(f) || cat.toLowerCase().includes(f))
+    .map(([,cmd,cat]) => `<div class="cmd-chip"><code>.${cmd}</code><span class="cmd-cat">${cat}</span></div>`)
+    .join('');
+}
+
+function filterCmds() {
+  renderCmds(document.getElementById('cmdSearch').value);
+}
+
+function copyHealth() {
+  navigator.clipboard.writeText(location.origin + '/health');
+  alert('Health URL copied!');
+}
+
+function fmtUptime(s) {
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = Math.floor(s % 60);
+  const p = [];
+  if (d) p.push(d + 'd');
+  if (h) p.push(h + 'h');
+  if (m) p.push(m + 'm');
+  p.push(sec + 's');
+  return p.join(' ');
+}
+
+async function refresh() {
+  try {
+    const [healthRes, statusRes] = await Promise.all([
+      fetch('/health').then(r => r.json()),
+      fetch('/api/status').then(r => r.json()),
+    ]);
+
+    document.getElementById('liveBadge').innerHTML = '<span class="live-dot"></span><span>Online</span>';
+
+    document.getElementById('serverUptime').textContent = fmtUptime(healthRes.uptime || 0);
+    const startedAt = Date.now() - (healthRes.uptime || 0) * 1000;
+    document.getElementById('lastRestart').textContent = new Date(startedAt).toLocaleString();
+
+    const st = statusRes.state || statusRes;
+    const connected = st.connected || false;
+    const registered = st.registered || false;
+
+    document.getElementById('statusVal').textContent = connected ? 'Online' : registered ? 'Reconnecting' : 'Awaiting Pair';
+    document.getElementById('statusVal').className = 'card-value ' + (connected ? 'status-ok' : registered ? 'status-warn' : 'status-err');
+    document.getElementById('statusSub').textContent = st.error || (connected ? 'Connected to WhatsApp' : 'Not connected');
+
+    document.getElementById('jidVal').textContent = st.jid ? st.jid.split('@')[0].split(':')[0] : '—';
+    document.getElementById('jidSub').textContent = st.pushName || '—';
+
+    document.getElementById('cmdVal').textContent = st.commandCount || ALL_CMDS.length;
+
+    if (st.lastError) {
+      document.getElementById('statusSub').textContent = st.lastError;
+    }
+  } catch {
+    document.getElementById('liveBadge').innerHTML = '<span class="live-dot" style="background:var(--red)"></span><span>Offline</span>';
+  }
+}
+
+renderCmds();
+refresh();
+setInterval(refresh, 10000);
+</script>
+</body>
+</html>

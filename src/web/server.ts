@@ -49,7 +49,7 @@ export function createWebServer(bot: BotClient): express.Application {
   });
 
   app.get('/', (_req, res) => {
-    res.json({ name: config.BOT_NAME, version: '2.0.0', status: 'running' });
+    res.sendFile(path.resolve(__dirname, '..', '..', 'public', 'index.html'));
   });
 
   app.get('/pair', (_req, res) => {
