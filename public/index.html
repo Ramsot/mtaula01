@@ -5,387 +5,291 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Mtaula 01 — Dashboard</title>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    *{box-sizing:border-box;margin:0;padding:0}
+    :root{--bg:#0a0e1a;--card:#111827;--card2:#1a2236;--border:#1e293b;--text:#e2e8f0;--dim:#94a3b8;--accent:#6366f1;--green:#22c55e;--red:#ef4444;--yellow:#eab308;--blue:#3b82f6;--purple:#8b5cf6}
+    body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+    ::-webkit-scrollbar{width:6px;height:6px}
+    ::-webkit-scrollbar-track{background:transparent}
+    ::-webkit-scrollbar-thumb{background:#334155;border-radius:3px}
 
-    :root {
-      --bg: #0a0e1a;
-      --card: #111827;
-      --card-hover: #1a2236;
-      --border: #1e293b;
-      --text: #e2e8f0;
-      --text-dim: #94a3b8;
-      --accent: #6366f1;
-      --accent-glow: rgba(99,102,241,.25);
-      --green: #22c55e;
-      --green-bg: rgba(34,197,94,.12);
-      --red: #ef4444;
-      --red-bg: rgba(239,68,68,.12);
-      --yellow: #eab308;
-      --yellow-bg: rgba(234,179,8,.12);
-      --blue: #3b82f6;
-      --blue-bg: rgba(59,130,246,.12);
-    }
+    .header{max-width:1200px;margin:0 auto;padding:20px 24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+    .header-left{display:flex;align-items:center;gap:14px}
+    .logo{width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center;font-size:20px}
+    .header h1{font-size:20px;font-weight:700}
+    .header .sub{font-size:12px;color:var(--dim)}
+    .header-right{display:flex;align-items:center;gap:10px}
+    .badge{padding:6px 14px;border-radius:20px;font-size:12px;font-weight:600;display:flex;align-items:center;gap:6px}
+    .badge.on{background:rgba(34,197,94,.12);color:var(--green);border:1px solid rgba(34,197,94,.3)}
+    .badge.off{background:rgba(239,68,68,.12);color:var(--red);border:1px solid rgba(239,68,68,.3)}
+    .badge.warn{background:rgba(234,179,8,.12);color:var(--yellow);border:1px solid rgba(234,179,8,.3)}
+    .dot{width:8px;height:8px;border-radius:50%;animation:pulse 2s ease-in-out infinite}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+    .user-pill{display:flex;align-items:center;gap:8px;padding:6px 12px;border-radius:20px;background:rgba(99,102,241,.12);border:1px solid rgba(99,102,241,.3);font-size:13px}
+    .user-pill .role{font-size:10px;text-transform:uppercase;color:var(--accent);font-weight:700;letter-spacing:.5px}
+    .btn-logout{background:none;border:none;color:var(--dim);cursor:pointer;font-size:16px;padding:4px}
+    .btn-logout:hover{color:var(--red)}
 
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      min-height: 100vh;
-      padding: 24px;
-    }
+    .tabs{max-width:1200px;margin:0 auto;padding:0 24px 16px;display:flex;gap:4px;border-bottom:1px solid var(--border)}
+    .tab{padding:10px 18px;font-size:13px;font-weight:600;color:var(--dim);cursor:pointer;border-bottom:2px solid transparent;border-radius:6px 6px 0 0;transition:.15s;background:none;border-top:none;border-left:none;border-right:none;font-family:inherit}
+    .tab:hover{color:var(--text);background:rgba(255,255,255,.03)}
+    .tab.active{color:var(--accent);border-bottom-color:var(--accent)}
 
-    .header {
-      max-width: 1100px;
-      margin: 0 auto 32px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      flex-wrap: wrap;
-      gap: 16px;
-    }
+    .content{max-width:1200px;margin:0 auto;padding:24px;display:none}
+    .content.active{display:block}
 
-    .header-left {
-      display: flex;
-      align-items: center;
-      gap: 14px;
-    }
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:24px}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;transition:border-color .2s}
+    .card:hover{border-color:rgba(99,102,241,.3)}
+    .card-icon{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:16px;margin-bottom:12px}
+    .card-label{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin-bottom:6px;font-weight:600}
+    .card-value{font-size:24px;font-weight:700}
+    .card-sub{font-size:12px;color:var(--dim);margin-top:4px}
 
-    .logo {
-      width: 48px;
-      height: 48px;
-      border-radius: 14px;
-      background: linear-gradient(135deg, var(--accent), #8b5cf6);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 22px;
-      box-shadow: 0 0 24px var(--accent-glow);
-    }
+    .panel{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:16px}
+    .panel h2{font-size:15px;font-weight:600;margin-bottom:14px;display:flex;align-items:center;gap:8px}
 
-    .header h1 { font-size: 22px; font-weight: 700; }
-    .header .sub { font-size: 13px; color: var(--text-dim); margin-top: 2px; }
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th{text-align:left;padding:10px 12px;color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);font-weight:600}
+    td{padding:10px 12px;border-bottom:1px solid var(--border)}
+    tr:hover td{background:rgba(255,255,255,.02)}
+    .pill{display:inline-block;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:600}
+    .pill.admin{background:rgba(139,92,246,.15);color:var(--purple)}
+    .pill.operator{background:rgba(59,130,246,.15);color:var(--blue)}
+    .pill.viewer{background:rgba(148,163,184,.15);color:var(--dim)}
+    .pill.active{background:rgba(34,197,94,.15);color:var(--green)}
+    .pill.inactive{background:rgba(239,68,68,.15);color:var(--red)}
+    .pill.success{background:rgba(34,197,94,.15);color:var(--green)}
+    .pill.failure{background:rgba(239,68,68,.15);color:var(--red)}
+    .pill.pending{background:rgba(234,179,8,.15);color:var(--yellow)}
+    .pill.building{background:rgba(59,130,246,.15);color:var(--blue)}
+    .pill.done{background:rgba(34,197,94,.15);color:var(--green)}
 
-    .live-badge {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      background: var(--green-bg);
-      border: 1px solid rgba(34,197,94,.3);
-      padding: 8px 16px;
-      border-radius: 24px;
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--green);
-    }
+    .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:8px;border:none;font-size:13px;font-weight:600;cursor:pointer;transition:.15s;font-family:inherit}
+    .btn:hover{opacity:.85}
+    .btn:active{transform:scale(.98)}
+    .btn-sm{padding:5px 10px;font-size:11px}
+    .btn-primary{background:var(--accent);color:#fff}
+    .btn-danger{background:var(--red);color:#fff}
+    .btn-ghost{background:rgba(255,255,255,.06);color:var(--text);border:1px solid var(--border)}
+    .btn-green{background:var(--green);color:#fff}
 
-    .live-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--green);
-      animation: pulse 2s ease-in-out infinite;
-    }
+    input,select{padding:10px 14px;border-radius:8px;border:1px solid var(--border);background:rgba(255,255,255,.04);color:var(--text);font-size:13px;outline:none;width:100%;transition:border-color .15s;font-family:inherit}
+    input:focus,select:focus{border-color:var(--accent)}
+    input::placeholder{color:var(--dim)}
+    select option{background:var(--card);color:var(--text)}
+    .form-row{display:flex;gap:10px;margin-bottom:10px}
+    .form-row input,.form-row select{flex:1}
 
-    @keyframes pulse {
-      0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(34,197,94,.4); }
-      50% { opacity: .7; box-shadow: 0 0 0 8px rgba(34,197,94,0); }
-    }
+    .terminal{background:#000;border:1px solid var(--border);border-radius:10px;padding:16px;font-family:'SF Mono','Fira Code',monospace;font-size:12px;line-height:1.6;color:#22c55e;max-height:300px;overflow-y:auto;white-space:pre-wrap;word-break:break-all}
 
-    .grid {
-      max-width: 1100px;
-      margin: 0 auto;
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-      gap: 16px;
-      margin-bottom: 24px;
-    }
+    .empty{text-align:center;padding:32px;color:var(--dim);font-size:13px}
 
-    .card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 24px;
-      transition: border-color .2s, transform .2s;
-    }
+    /* Login */
+    #loginView{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
+    .login-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:36px;width:100%;max-width:380px}
+    .login-card h2{text-align:center;font-size:22px;margin-bottom:6px}
+    .login-card .sub{text-align:center;font-size:13px;color:var(--dim);margin-bottom:28px}
+    .login-card label{display:block;font-size:12px;font-weight:600;color:var(--dim);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
+    .login-card .field{margin-bottom:16px}
+    .login-card .btn{width:100%;justify-content:center;padding:12px;font-size:14px;margin-top:8px}
+    .login-error{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:8px;padding:10px;font-size:13px;color:var(--red);margin-bottom:16px;display:none}
 
-    .card:hover {
-      border-color: rgba(99,102,241,.3);
-      transform: translateY(-2px);
-    }
+    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:100}
+    .modal-overlay.show{display:flex}
+    .modal{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:28px;width:100%;max-width:440px}
+    .modal h3{font-size:16px;margin-bottom:18px}
+    .modal .btn{margin-top:12px}
+    .modal .form-row{flex-direction:column}
 
-    .card-label {
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      color: var(--text-dim);
-      margin-bottom: 10px;
-      font-weight: 600;
-    }
-
-    .card-value {
-      font-size: 28px;
-      font-weight: 700;
-      line-height: 1.1;
-    }
-
-    .card-sub {
-      font-size: 13px;
-      color: var(--text-dim);
-      margin-top: 6px;
-    }
-
-    .card-icon {
-      width: 36px;
-      height: 36px;
-      border-radius: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 18px;
-      margin-bottom: 14px;
-    }
-
-    .icon-green { background: var(--green-bg); }
-    .icon-red { background: var(--red-bg); }
-    .icon-yellow { background: var(--yellow-bg); }
-    .icon-blue { background: var(--blue-bg); }
-    .icon-purple { background: var(--accent-glow); }
-
-    .status-ok { color: var(--green); }
-    .status-err { color: var(--red); }
-    .status-warn { color: var(--yellow); }
-    .status-info { color: var(--blue); }
-
-    .panel {
-      max-width: 1100px;
-      margin: 0 auto 24px;
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 24px;
-    }
-
-    .panel h2 {
-      font-size: 16px;
-      font-weight: 600;
-      margin-bottom: 16px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .engines { display: flex; flex-direction: column; gap: 10px; }
-
-    .engine-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 12px 16px;
-      background: rgba(255,255,255,.02);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-    }
-
-    .engine-name { font-weight: 600; font-size: 14px; }
-    .engine-status { font-size: 13px; display: flex; align-items: center; gap: 6px; }
-    .engine-dot { width: 8px; height: 8px; border-radius: 50%; }
-
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 10px 20px;
-      border-radius: 10px;
-      border: none;
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: opacity .2s, transform .1s;
-    }
-    .btn:hover { opacity: .85; }
-    .btn:active { transform: scale(.98); }
-
-    .btn-primary { background: var(--accent); color: white; }
-    .btn-danger { background: var(--red); color: white; }
-    .btn-ghost { background: rgba(255,255,255,.06); color: var(--text); border: 1px solid var(--border); }
-
-    .actions {
-      max-width: 1100px;
-      margin: 0 auto 24px;
-      display: flex;
-      gap: 12px;
-      flex-wrap: wrap;
-    }
-
-    .uptime-bar {
-      max-width: 1100px;
-      margin: 0 auto 24px;
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 20px 24px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      flex-wrap: wrap;
-      gap: 12px;
-    }
-
-    .uptime-info { display: flex; align-items: center; gap: 10px; font-size: 14px; }
-    .uptime-val { font-weight: 700; font-variant-numeric: tabular-nums; }
-
-    .cmd-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-      gap: 8px;
-    }
-
-    .cmd-chip {
-      background: rgba(255,255,255,.03);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 8px 12px;
-      font-size: 13px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    .cmd-chip code {
-      font-family: 'SF Mono', 'Fira Code', monospace;
-      color: var(--accent);
-      font-weight: 600;
-    }
-
-    .cmd-cat {
-      font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: .5px;
-      color: var(--text-dim);
-    }
-
-    .search-box {
-      width: 100%;
-      padding: 12px 16px;
-      border-radius: 10px;
-      border: 1px solid var(--border);
-      background: rgba(255,255,255,.03);
-      color: var(--text);
-      font-size: 14px;
-      margin-bottom: 16px;
-      outline: none;
-      transition: border-color .2s;
-    }
-    .search-box:focus { border-color: var(--accent); }
-    .search-box::placeholder { color: var(--text-dim); }
-
-    footer {
-      max-width: 1100px;
-      margin: 32px auto 0;
-      text-align: center;
-      font-size: 12px;
-      color: var(--text-dim);
-      padding-top: 24px;
-      border-top: 1px solid var(--border);
-    }
-
-    @media (max-width: 600px) {
-      body { padding: 16px; }
-      .header { flex-direction: column; align-items: flex-start; }
-      .card-value { font-size: 22px; }
-      .grid { grid-template-columns: 1fr 1fr; }
+    @media(max-width:600px){
+      .grid{grid-template-columns:1fr 1fr}
+      .tabs{overflow-x:auto}
+      table{font-size:11px}
+      th,td{padding:6px 8px}
     }
   </style>
 </head>
 <body>
 
+<div id="loginView">
+  <div class="login-card">
+    <h2>🤖 Mtaula 01</h2>
+    <p class="sub">Admin Dashboard Login</p>
+    <div class="login-error" id="loginError"></div>
+    <div class="field">
+      <label>Username</label>
+      <input id="loginUser" type="text" placeholder="Enter username" autocomplete="username">
+    </div>
+    <div class="field">
+      <label>Password</label>
+      <input id="loginPass" type="password" placeholder="Enter password" autocomplete="current-password">
+    </div>
+    <button class="btn btn-primary" onclick="login()">Sign In</button>
+    <p style="text-align:center;font-size:12px;color:var(--dim);margin-top:16px">Default: username <code>admin</code>, password = ADMIN_TOKEN</p>
+  </div>
+</div>
+
+<div id="dashboardView" style="display:none">
   <div class="header">
     <div class="header-left">
       <div class="logo">🤖</div>
-      <div>
-        <h1>Mtaula 01</h1>
-        <div class="sub">WhatsApp Bot Dashboard</div>
+      <div><h1>Mtaula 01</h1><div class="sub">Admin Dashboard</div></div>
+    </div>
+    <div class="header-right">
+      <div class="badge on" id="connBadge"><span class="dot" style="background:var(--green)"></span><span id="connText">Online</span></div>
+      <div class="user-pill"><span id="userName"></span><span class="role" id="userRole"></span><button class="btn-logout" onclick="logout()" title="Logout">⏻</button></div>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="overview">📊 Overview</button>
+    <button class="tab" data-tab="terminal">🖥️ Terminal</button>
+    <button class="tab" data-tab="users">👥 Users</button>
+    <button class="tab" data-tab="activity">📜 Activity</button>
+    <button class="tab" data-tab="deploys">🚀 Deploys</button>
+    <button class="tab" data-tab="engines">🤖 AI Engines</button>
+  </div>
+
+  <!-- OVERVIEW -->
+  <div class="content active" id="tab-overview">
+    <div class="grid">
+      <div class="card">
+        <div class="card-icon" style="background:rgba(139,92,246,.12)">⚡</div>
+        <div class="card-label">Bot Status</div>
+        <div class="card-value" id="ovStatus">—</div>
+        <div class="card-sub" id="ovStatusSub">—</div>
+      </div>
+      <div class="card">
+        <div class="card-icon" style="background:rgba(59,130,246,.12)">⏱️</div>
+        <div class="card-label">Uptime</div>
+        <div class="card-value" id="ovUptime">—</div>
+        <div class="card-sub" id="ovRestart">—</div>
+      </div>
+      <div class="card">
+        <div class="card-icon" style="background:rgba(34,197,94,.12)">📞</div>
+        <div class="card-label">Bot Number</div>
+        <div class="card-value" id="ovJid">—</div>
+        <div class="card-sub" id="ovName">—</div>
+      </div>
+      <div class="card">
+        <div class="card-icon" style="background:rgba(234,179,8,.12)">🐛</div>
+        <div class="card-label">Commands</div>
+        <div class="card-value" id="ovCmds">85</div>
+        <div class="card-sub">loaded modules</div>
       </div>
     </div>
-    <div class="live-badge" id="liveBadge">
-      <span class="live-dot"></span>
-      <span id="liveText">Connecting…</span>
-    </div>
-  </div>
 
-  <div class="grid" id="statsGrid">
-    <div class="card">
-      <div class="card-icon icon-purple">⚡</div>
-      <div class="card-label">Status</div>
-      <div class="card-value" id="statusVal">—</div>
-      <div class="card-sub" id="statusSub">Loading…</div>
-    </div>
-    <div class="card">
-      <div class="card-icon icon-blue">⏱️</div>
-      <div class="card-label">Uptime</div>
-      <div class="card-value" id="uptimeVal">—</div>
-      <div class="card-sub" id="uptimeSub">—</div>
-    </div>
-    <div class="card">
-      <div class="card-icon icon-green">📞</div>
-      <div class="card-label">Bot Number</div>
-      <div class="card-value" id="jidVal">—</div>
-      <div class="card-sub" id="jidSub">—</div>
-    </div>
-    <div class="card">
-      <div class="card-icon icon-yellow">🐛</div>
-      <div class="card-label">Commands</div>
-      <div class="card-value" id="cmdVal">—</div>
-      <div class="card-sub">loaded modules</div>
-    </div>
-  </div>
-
-  <div class="uptime-bar">
-    <div class="uptime-info">
-      <span>🕐 Server uptime:</span>
-      <span class="uptime-val" id="serverUptime">—</span>
-    </div>
-    <div class="uptime-info">
-      <span>🔄 Last restart:</span>
-      <span class="uptime-val" id="lastRestart">—</span>
-    </div>
-  </div>
-
-  <div class="panel">
-    <h2>🤖 AI Engines</h2>
-    <div class="engines" id="engines">
-      <div class="engine-row">
-        <span class="engine-name">Meta AI (WhatsApp)</span>
-        <span class="engine-status"><span class="engine-dot" style="background:var(--yellow)"></span>Checking…</span>
-      </div>
-      <div class="engine-row">
-        <span class="engine-name">Gemini 3.8 Flash</span>
-        <span class="engine-status"><span class="engine-dot" style="background:var(--yellow)"></span>Checking…</span>
-      </div>
-      <div class="engine-row">
-        <span class="engine-name">Groq Qwen 3.8</span>
-        <span class="engine-status"><span class="engine-dot" style="background:var(--yellow)"></span>Checking…</span>
+    <div class="panel">
+      <h2>⚡ Quick Actions</h2>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <a class="btn btn-primary" href="/pair">📱 Pair Device</a>
+        <button class="btn btn-ghost" onclick="copyHealth()">🔗 Copy Health URL</button>
+        <button class="btn btn-ghost" onclick="refreshAll()">🔄 Refresh</button>
+        <button class="btn btn-danger" onclick="resetSession()">🗑️ Reset Session</button>
       </div>
     </div>
+
+    <div class="panel">
+      <h2>📋 Commands</h2>
+      <input class="search-box" type="text" placeholder="Search commands…" id="cmdSearch" oninput="filterCmds()" style="margin-bottom:12px">
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px" id="cmdGrid"></div>
+    </div>
   </div>
 
-  <div class="actions">
-    <a class="btn btn-primary" href="/pair">📱 Pair Device</a>
-    <button class="btn btn-ghost" onclick="copyHealth()">🔗 Copy Health URL</button>
-    <button class="btn btn-ghost" onclick="location.reload()">🔄 Refresh</button>
+  <!-- TERMINAL -->
+  <div class="content" id="tab-terminal">
+    <div class="panel">
+      <h2>🖥️ Command Runner</h2>
+      <p style="font-size:12px;color:var(--dim);margin-bottom:12px">Allowed: npm run build, npm run typecheck, git status, git log, ls, whoami, date, uptime, df -h</p>
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <select id="cmdPreset" onchange="document.getElementById('cmdInput').value=this.value" style="flex:1">
+          <option value="">Select a command…</option>
+          <option value="git status">git status</option>
+          <option value="git log --oneline -5">git log (last 5)</option>
+          <option value="git diff --stat">git diff stat</option>
+          <option value="npm run typecheck">typecheck</option>
+          <option value="npm run build">build</option>
+          <option value="uptime">uptime</option>
+          <option value="df -h">disk usage</option>
+          <option value="whoami">whoami</option>
+          <option value="date">date</option>
+          <option value="ls -la">list files</option>
+        </select>
+        <button class="btn btn-primary" onclick="runCommand()">▶ Run</button>
+      </div>
+      <input id="cmdInput" type="text" placeholder="Or type a custom allowed command…" style="margin-bottom:10px" onkeydown="if(event.key==='Enter')runCommand()">
+      <div class="terminal" id="termOutput">Ready. Select or type a command and press Run.</div>
+    </div>
   </div>
 
-  <div class="panel">
-    <h2>📋 Commands</h2>
-    <input class="search-box" type="text" placeholder="Search commands…" id="cmdSearch" oninput="filterCmds()">
-    <div class="cmd-grid" id="cmdGrid"></div>
+  <!-- USERS -->
+  <div class="content" id="tab-users">
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <h2 style="margin:0">👥 User Management</h2>
+        <button class="btn btn-primary btn-sm" onclick="showModal()">+ Add User</button>
+      </div>
+      <table>
+        <thead><tr><th>Username</th><th>Role</th><th>Status</th><th>Last Login</th><th>Created</th><th>Actions</th></tr></thead>
+        <tbody id="usersTable"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
   </div>
 
-  <footer>
-    Mtaula 01 v2.0.0 · Built with TypeScript + Baileys · <a href="/health" style="color:var(--accent)">/health JSON</a>
-  </footer>
+  <!-- ACTIVITY -->
+  <div class="content" id="tab-activity">
+    <div class="panel">
+      <h2>📜 Activity Log</h2>
+      <table>
+        <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Details</th><th>IP</th><th>Status</th></tr></thead>
+        <tbody id="activityTable"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- DEPLOYS -->
+  <div class="content" id="tab-deploys">
+    <div class="panel">
+      <h2>🚀 Deploy History</h2>
+      <table>
+        <thead><tr><th>Time</th><th>Triggered By</th><th>Commit</th><th>Status</th><th>Duration</th></tr></thead>
+        <tbody id="deploysTable"><tr><td colspan="5" class="empty">No deploys yet</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ENGINES -->
+  <div class="content" id="tab-engines">
+    <div class="panel">
+      <h2>🤖 AI Engines</h2>
+      <div id="enginesList" style="display:flex;flex-direction:column;gap:8px"><div class="empty">Loading…</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="userModal">
+  <div class="modal">
+    <h3 id="modalTitle">Add User</h3>
+    <div class="form-row"><input id="muName" placeholder="Username"></div>
+    <div class="form-row"><input id="muPass" type="password" placeholder="Password (6+ chars)"></div>
+    <div class="form-row">
+      <select id="muRole">
+        <option value="viewer">Viewer (read-only)</option>
+        <option value="operator">Operator (scan, deploy, commands)</option>
+        <option value="admin">Admin (full access)</option>
+      </select>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:14px">
+      <button class="btn btn-primary" onclick="createUser()">Create</button>
+      <button class="btn btn-ghost" onclick="hideModal()">Cancel</button>
+    </div>
+  </div>
+</div>
 
 <script>
+let TOKEN = localStorage.getItem('mtaula_token') || '';
+let ME = null;
+
 const ALL_CMDS = [
   ['ai','ai','AI'],['ai','clear','AI'],
   ['antidelete','antidelete','Media'],['antidelete','antideletestatus','Media'],['antidelete','del','Media'],
@@ -401,74 +305,234 @@ const ALL_CMDS = [
   ['tools','calc','Tools'],['tools','tts','Tools'],['tools','trt','Tools'],['tools','shorten','Tools'],['tools','base64','Tools'],['tools','hash','Tools'],['tools','tempmail','Tools'],['tools','weather','Tools'],['tools','urlpreview','Tools'],
 ];
 
-function renderCmds(filter = '') {
+function renderCmds(f='') {
   const grid = document.getElementById('cmdGrid');
-  const f = filter.toLowerCase();
+  const q = f.toLowerCase();
   grid.innerHTML = ALL_CMDS
-    .filter(([,cmd,cat]) => !f || cmd.includes(f) || cat.toLowerCase().includes(f))
-    .map(([,cmd,cat]) => `<div class="cmd-chip"><code>.${cmd}</code><span class="cmd-cat">${cat}</span></div>`)
+    .filter(([,cmd,cat]) => !q || cmd.includes(q) || cat.toLowerCase().includes(q))
+    .map(([,cmd,cat]) => `<div style="background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:13px;display:flex;justify-content:space-between"><code style="font-family:'SF Mono',monospace;color:var(--accent);font-weight:600">.${cmd}</code><span style="font-size:10px;text-transform:uppercase;color:var(--dim)">${cat}</span></div>`)
     .join('');
 }
+function filterCmds(){ renderCmds(document.getElementById('cmdSearch').value); }
 
-function filterCmds() {
-  renderCmds(document.getElementById('cmdSearch').value);
+function fmtUptime(s){const d=Math.floor(s/86400);const h=Math.floor((s%86400)/3600);const m=Math.floor((s%3600)/60);const sec=Math.floor(s%60);const p=[];if(d)p.push(d+'d');if(h)p.push(h+'h');if(m)p.push(m+'m');p.push(sec+'s');return p.join(' ')}
+
+function api(path, opts={}) {
+  return fetch(path, { ...opts, headers: { 'Content-Type':'application/json', 'Authorization':`Bearer ${TOKEN}`, ...(opts.headers||{}) } }).then(async r => {
+    if (r.status === 401) { logout(); throw new Error('Unauthorized'); }
+    return r.json();
+  });
+}
+
+function showToast(msg, ok=true) {
+  const el = document.createElement('div');
+  el.style.cssText = `position:fixed;bottom:20px;right:20px;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:600;z-index:200;background:${ok?'rgba(34,197,94,.15)':'rgba(239,68,68,.15)'};color:${ok?'var(--green)':'var(--red)'};border:1px solid ${ok?'rgba(34,197,94,.3)':'rgba(239,68,68,.3)'};backdrop-filter:blur(8px)`;
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 3000);
+}
+
+async function login() {
+  const u = document.getElementById('loginUser').value.trim();
+  const p = document.getElementById('loginPass').value;
+  const errEl = document.getElementById('loginError');
+  errEl.style.display = 'none';
+  if (!u || !p) { errEl.textContent = 'Please fill all fields'; errEl.style.display = 'block'; return; }
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: u, password: p }),
+    }).then(r => r.json());
+    if (!res.success) { errEl.textContent = res.error || 'Login failed'; errEl.style.display = 'block'; return; }
+    TOKEN = res.token;
+    localStorage.setItem('mtaula_token', TOKEN);
+    ME = res.user;
+    showDashboard();
+  } catch (e) {
+    errEl.textContent = 'Connection error'; errEl.style.display = 'block';
+  }
+}
+
+function logout() {
+  TOKEN = '';
+  ME = null;
+  localStorage.removeItem('mtaula_token');
+  document.getElementById('loginView').style.display = 'flex';
+  document.getElementById('dashboardView').style.display = 'none';
+}
+
+async function showDashboard() {
+  try {
+    const me = await api('/api/auth/me');
+    ME = me.user;
+    document.getElementById('userName').textContent = ME.username;
+    document.getElementById('userRole').textContent = ME.role;
+    document.getElementById('loginView').style.display = 'none';
+    document.getElementById('dashboardView').style.display = 'block';
+    refreshAll();
+  } catch { logout(); }
+}
+
+async function refreshAll() {
+  try {
+    const [health, status] = await Promise.all([fetch('/health').then(r=>r.json()), fetch('/api/status').then(r=>r.json())]);
+    const connected = status.connected || false;
+    const registered = status.registered || false;
+    document.getElementById('connBadge').className = 'badge ' + (connected ? 'on' : registered ? 'warn' : 'off');
+    document.getElementById('connText').textContent = connected ? 'Online' : registered ? 'Reconnecting' : 'Awaiting Pair';
+    document.getElementById('ovStatus').textContent = connected ? 'Online' : registered ? 'Reconnecting' : 'Offline';
+    document.getElementById('ovStatus').style.color = connected ? 'var(--green)' : registered ? 'var(--yellow)' : 'var(--red)';
+    document.getElementById('ovStatusSub').textContent = status.error || (connected ? 'Connected to WhatsApp' : 'Not connected');
+    document.getElementById('ovUptime').textContent = fmtUptime(health.uptime || 0);
+    const startedAt = Date.now() - (health.uptime || 0) * 1000;
+    document.getElementById('ovRestart').textContent = 'Since ' + new Date(startedAt).toLocaleString();
+    document.getElementById('ovJid').textContent = status.jid ? status.jid.split('@')[0].split(':')[0] : '—';
+    document.getElementById('ovName').textContent = status.pushName || '—';
+  } catch {}
+
+  loadActivity();
+  loadDeploys();
+  loadEngines();
+  if (ME?.permissions?.includes('manage_users')) loadUsers();
+}
+
+async function runCommand() {
+  const cmd = document.getElementById('cmdInput').value.trim();
+  if (!cmd) return;
+  const term = document.getElementById('termOutput');
+  term.textContent = `> ${cmd}\nRunning…`;
+  try {
+    const res = await api('/api/commands/run', { method: 'POST', body: JSON.stringify({ command: cmd }) });
+    term.textContent = `> ${cmd}\n\n${res.output || '(no output)'}\n\n[exit: ${res.exitCode ?? '?'}]`;
+  } catch (e) {
+    term.textContent = `> ${cmd}\n\nError: ${e.message}`;
+  }
+}
+
+async function loadUsers() {
+  try {
+    const res = await api('/api/users');
+    const tbody = document.getElementById('usersTable');
+    if (!res.users?.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">No users</td></tr>'; return; }
+    tbody.innerHTML = res.users.map(u => `<tr>
+      <td style="font-weight:600">${esc(u.username)}</td>
+      <td><span class="pill ${u.role}">${u.role}</span></td>
+      <td><span class="pill ${u.active?'active':'inactive'}">${u.active?'Active':'Disabled'}</span></td>
+      <td>${u.lastLogin ? new Date(u.lastLogin).toLocaleString() : 'Never'}</td>
+      <td>${new Date(u.createdAt).toLocaleDateString()}</td>
+      <td>${u.username!=='admin'?`<button class="btn btn-ghost btn-sm" onclick="toggleUser('${u.id}',${!u.active})">${u.active?'Disable':'Enable'}</button> <button class="btn btn-danger btn-sm" onclick="deleteUser('${u.id}','${esc(u.username)}')">Del</button>`:'<span style="color:var(--dim);font-size:11px">protected</span>'}</td>
+    </tr>`).join('');
+  } catch {}
+}
+
+async function loadActivity() {
+  try {
+    const res = await api('/api/activity?limit=100');
+    const tbody = document.getElementById('activityTable');
+    if (!res.activity?.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">No activity yet</td></tr>'; return; }
+    tbody.innerHTML = res.activity.map(a => `<tr>
+      <td style="white-space:nowrap">${new Date(a.timestamp).toLocaleString()}</td>
+      <td style="font-weight:600">${esc(a.username)}</td>
+      <td><code style="color:var(--accent)">${esc(a.action)}</code></td>
+      <td style="color:var(--dim);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(a.details)}</td>
+      <td style="color:var(--dim)">${esc(a.ip)}</td>
+      <td><span class="pill ${a.status}">${a.status}</span></td>
+    </tr>`).join('');
+  } catch {}
+}
+
+async function loadDeploys() {
+  try {
+    const res = await api('/api/deploys');
+    const tbody = document.getElementById('deploysTable');
+    if (!res.deploys?.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty">No deploys yet</td></tr>'; return; }
+    tbody.innerHTML = res.deploys.map(d => `<tr>
+      <td>${new Date(d.startedAt).toLocaleString()}</td>
+      <td style="font-weight:600">${esc(d.triggeredBy)}</td>
+      <td><code style="color:var(--accent);font-size:11px">${esc((d.commit||'').slice(0,8))}</code></td>
+      <td><span class="pill ${d.status==='success'?'done':d.status}">${d.status}</span></td>
+      <td>${d.finishedAt ? fmtUptime((d.finishedAt-d.startedAt)/1000) : '—'}</td>
+    </tr>`).join('');
+  } catch {}
+}
+
+async function loadEngines() {
+  try {
+    const res = await api('/api/engines');
+    document.getElementById('enginesList').innerHTML = (res.engines||[]).map(e => `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:rgba(255,255,255,.02);border:1px solid var(--border);border-radius:10px">
+        <span style="font-weight:600;font-size:14px">${esc(e.name)}</span>
+        <span style="font-size:13px;display:flex;align-items:center;gap:6px">
+          <span style="width:8px;height:8px;border-radius:50%;background:${e.configured?'var(--green)':'var(--dim)'}"></span>
+          ${e.configured?'Configured':'Not configured'}
+        </span>
+      </div>`).join('');
+  } catch {}
+}
+
+async function createUser() {
+  const u = document.getElementById('muName').value.trim();
+  const p = document.getElementById('muPass').value;
+  const r = document.getElementById('muRole').value;
+  if (!u || !p || p.length < 6) { showToast('Username + password (6+ chars) required', false); return; }
+  try {
+    const res = await api('/api/users', { method: 'POST', body: JSON.stringify({ username: u, password: p, role: r }) });
+    if (res.success) { showToast(`User "${u}" created`); hideModal(); loadUsers(); loadActivity(); }
+    else showToast(res.error, false);
+  } catch (e) { showToast(e.message, false); }
+}
+
+async function toggleUser(id, active) {
+  try {
+    const res = await api(`/api/users/${id}`, { method: 'PUT', body: JSON.stringify({ active }) });
+    if (res.success) { showToast(active ? 'User enabled' : 'User disabled'); loadUsers(); loadActivity(); }
+  } catch (e) { showToast(e.message, false); }
+}
+
+async function deleteUser(id, name) {
+  if (!confirm(`Delete user "${name}"?`)) return;
+  try {
+    const res = await api(`/api/users/${id}`, { method: 'DELETE' });
+    if (res.success) { showToast(`User "${name}" deleted`); loadUsers(); loadActivity(); }
+    else showToast(res.error, false);
+  } catch (e) { showToast(e.message, false); }
+}
+
+async function resetSession() {
+  if (!confirm('Reset WhatsApp session? Bot will need re-pairing.')) return;
+  try {
+    const res = await api('/api/reset', { method: 'POST' });
+    showToast(res.success ? 'Session reset. Re-pair required.' : (res.error||'Failed'), res.success);
+  } catch (e) { showToast(e.message, false); }
 }
 
 function copyHealth() {
   navigator.clipboard.writeText(location.origin + '/health');
-  alert('Health URL copied!');
+  showToast('Health URL copied');
 }
 
-function fmtUptime(s) {
-  const d = Math.floor(s / 86400);
-  const h = Math.floor((s % 86400) / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = Math.floor(s % 60);
-  const p = [];
-  if (d) p.push(d + 'd');
-  if (h) p.push(h + 'h');
-  if (m) p.push(m + 'm');
-  p.push(sec + 's');
-  return p.join(' ');
-}
+function showModal(){ document.getElementById('userModal').classList.add('show'); }
+function hideModal(){ document.getElementById('userModal').classList.remove('show'); document.getElementById('muName').value=''; document.getElementById('muPass').value=''; }
 
-async function refresh() {
-  try {
-    const [healthRes, statusRes] = await Promise.all([
-      fetch('/health').then(r => r.json()),
-      fetch('/api/status').then(r => r.json()),
-    ]);
+function esc(s){ const d=document.createElement('div'); d.textContent=String(s??''); return d.innerHTML; }
 
-    document.getElementById('liveBadge').innerHTML = '<span class="live-dot"></span><span>Online</span>';
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.content').forEach(x=>x.classList.remove('active'));
+  t.classList.add('active');
+  document.getElementById('tab-'+t.dataset.tab).classList.add('active');
+  if (t.dataset.tab==='users') loadUsers();
+  if (t.dataset.tab==='activity') loadActivity();
+  if (t.dataset.tab==='deploys') loadDeploys();
+  if (t.dataset.tab==='engines') loadEngines();
+}));
 
-    document.getElementById('serverUptime').textContent = fmtUptime(healthRes.uptime || 0);
-    const startedAt = Date.now() - (healthRes.uptime || 0) * 1000;
-    document.getElementById('lastRestart').textContent = new Date(startedAt).toLocaleString();
-
-    const st = statusRes.state || statusRes;
-    const connected = st.connected || false;
-    const registered = st.registered || false;
-
-    document.getElementById('statusVal').textContent = connected ? 'Online' : registered ? 'Reconnecting' : 'Awaiting Pair';
-    document.getElementById('statusVal').className = 'card-value ' + (connected ? 'status-ok' : registered ? 'status-warn' : 'status-err');
-    document.getElementById('statusSub').textContent = st.error || (connected ? 'Connected to WhatsApp' : 'Not connected');
-
-    document.getElementById('jidVal').textContent = st.jid ? st.jid.split('@')[0].split(':')[0] : '—';
-    document.getElementById('jidSub').textContent = st.pushName || '—';
-
-    document.getElementById('cmdVal').textContent = st.commandCount || ALL_CMDS.length;
-
-    if (st.lastError) {
-      document.getElementById('statusSub').textContent = st.lastError;
-    }
-  } catch {
-    document.getElementById('liveBadge').innerHTML = '<span class="live-dot" style="background:var(--red)"></span><span>Offline</span>';
-  }
-}
+document.getElementById('loginPass')?.addEventListener('keydown', e => { if(e.key==='Enter') login(); });
 
 renderCmds();
-refresh();
-setInterval(refresh, 10000);
+if (TOKEN) showDashboard(); else document.getElementById('loginView').style.display = 'flex';
+setInterval(() => { if (TOKEN && document.getElementById('dashboardView').style.display !== 'none') refreshAll(); }, 15000);
 </script>
 </body>
 </html>

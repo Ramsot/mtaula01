@@ -2,6 +2,7 @@ import config from './config/index.js';
 import logger from './core/logger.js';
 import { BotClient } from './core/client.js';
 import { createWebServer } from './web/server.js';
+import { adminStore } from './core/admin.js';
 import { aiDiagnostics, availableAiEngines } from './core/ai.js';
 import fs from 'fs/promises';
 
@@ -61,6 +62,7 @@ async function main() {
   }
 
   await checkSessionDir();
+  await adminStore.load();
 
   const bot = new BotClient();
   const app = createWebServer(bot);

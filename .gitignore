@@ -8,3 +8,6 @@ auth_info_baileys/
 .DS_Store
 
 .freebuff/
+
+# Admin data
+data/
