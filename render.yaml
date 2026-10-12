@@ -15,6 +15,10 @@ services:
       # a full re-pair.
       - key: SESSION_DIR
         value: /data/auth_info_baileys
+      # Accounts + device pairings — on the same persistent Disk so logins and
+      # paired devices survive redeploys (no re-pairing after an update).
+      - key: DATA_DIR
+        value: /data/mtaula-data
       - key: PORT
         value: 10000
       - key: PREFIX

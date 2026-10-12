@@ -20,7 +20,12 @@ export default function ownerCommands(): Command[] {
         }
 
         await ctx.m.reply('📢 Broadcasting...');
-        const chats = [ctx.m.from];
+
+        // Reach every chat the socket knows about (private + groups), de-duped,
+        // always including the chat the command came from.
+        const store = (ctx.sock as any).store;
+        const known: string[] = store?.chats ? Object.keys(store.chats) : [];
+        const chats = Array.from(new Set([ctx.m.from, ...known]));
         let success = 0;
         let failed = 0;
 
@@ -33,7 +38,7 @@ export default function ownerCommands(): Command[] {
           }
         }
 
-        await ctx.m.reply(`✅ Broadcast complete!\n📨 Sent: ${success}\n❌ Failed: ${failed}`);
+        await ctx.m.reply(`✅ Broadcast complete!\n📨 Sent: ${success}\n❌ Failed: ${failed}\n💬 Chats reached: ${chats.length}`);
       },
     },
     {

@@ -3,6 +3,7 @@ import logger from './core/logger.js';
 import { BotClient } from './core/client.js';
 import { createWebServer } from './web/server.js';
 import { adminStore } from './core/admin.js';
+import { pairingStore } from './core/pairing.js';
 import { aiDiagnostics, availableAiEngines } from './core/ai.js';
 import fs from 'fs/promises';
 
@@ -14,6 +15,8 @@ import fs from 'fs/promises';
  */
 async function checkSessionDir(): Promise<void> {
   const dir = config.SESSION_DIR;
+  const dataDir = config.DATA_DIR;
+  const isPersistentPath = (p: string) => p.startsWith('/data') || p.startsWith('/mnt') || p.startsWith('/var/data');
   try {
     await fs.mkdir(dir, { recursive: true });
     const probe = `${dir}/.write-probe`;
@@ -26,7 +29,7 @@ async function checkSessionDir(): Promise<void> {
       hasSession = true;
     } catch {}
 
-    const isPersistent = dir.startsWith('/data') || dir.startsWith('/mnt');
+    const isPersistent = isPersistentPath(dir);
     logger.info({ dir, hasSession, isPersistent }, 'Session directory is writable');
 
     if (!hasSession) {
@@ -44,6 +47,26 @@ async function checkSessionDir(): Promise<void> {
       { dir, err: err?.message },
       'Session directory is NOT writable - session cannot be saved'
     );
+  }
+
+  // Accounts and device pairings live in DATA_DIR. If that is not persistent,
+  // every redeploy wipes logins and forces every paired device to re-pair.
+  try {
+    await fs.mkdir(dataDir, { recursive: true });
+    const probe = `${dataDir}/.write-probe`;
+    await fs.writeFile(probe, 'ok');
+    await fs.rm(probe, { force: true });
+
+    const isPersistent = isPersistentPath(dataDir);
+    logger.info({ dir: dataDir, isPersistent }, 'Data directory is writable');
+    if (!isPersistent) {
+      logger.warn(
+        { dir: dataDir },
+        'DATA_DIR is NOT on a persistent Disk! Admin accounts and device pairings will be lost on redeploy. Set DATA_DIR to a path on the mounted Disk (e.g. /data/mtaula-data).'
+      );
+    }
+  } catch (err: any) {
+    logger.error({ dir: dataDir, err: err?.message }, 'Data directory is NOT writable');
   }
 }
 
@@ -63,6 +86,7 @@ async function main() {
 
   await checkSessionDir();
   await adminStore.load();
+  await pairingStore.load();
 
   const bot = new BotClient();
   const app = createWebServer(bot);

@@ -102,5 +102,6 @@ export interface BotConfig {
   DEBUG_MODE: boolean;
   TIMEZONE: string;
   SESSION_DIR: string;
+  DATA_DIR: string;
   PORT: number;
 }

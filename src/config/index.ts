@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import path from 'path';
 import { z } from 'zod';
 import type { BotConfig } from '../core/types.js';
 
@@ -31,8 +32,22 @@ const envSchema = z.object({
   DEBUG_MODE: z.string().default('false').transform(v => v === 'true'),
   TIMEZONE: z.string().default('Africa/Dar_es_Salaam'),
   SESSION_DIR: z.string().default('./auth_info_baileys'),
+  DATA_DIR: z.string().default(''),
   PORT: z.string().default('3000').transform(Number),
 });
+
+/**
+ * Admin data used to live in ./data, which is wiped on every Render deploy
+ * (ephemeral filesystem) - so users, pairings and activity vanished and the
+ * owner had to re-create accounts and re-pair devices after each update. Derive
+ * a directory next to the persistent session directory when SESSION_DIR is an
+ * absolute path (i.e. a mounted Disk) so this data survives redeploys too.
+ */
+function resolveDataDir(explicit: string, sessionDir: string): string {
+  if (explicit) return explicit;
+  if (path.isAbsolute(sessionDir)) return path.join(path.dirname(sessionDir), 'mtaula-data');
+  return './data';
+}
 
 function loadConfig(): BotConfig {
   // Vitest/Vite set MODE=test in the environment before dotenv runs; an
@@ -77,6 +92,7 @@ function loadConfig(): BotConfig {
     DEBUG_MODE: e.DEBUG_MODE,
     TIMEZONE: e.TIMEZONE,
     SESSION_DIR: e.SESSION_DIR,
+    DATA_DIR: resolveDataDir(e.DATA_DIR, e.SESSION_DIR),
     PORT: e.PORT,
   };
 }

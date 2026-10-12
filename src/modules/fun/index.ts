@@ -179,7 +179,8 @@ export default function funCommands(): Command[] {
       description: 'Roll a dice',
       example: '.roll 20',
       execute: async (ctx: CommandContext) => {
-        const sides = parseInt(ctx.args[0]) || 6;
+        const requested = parseInt(ctx.args[0], 10);
+        const sides = Number.isFinite(requested) ? Math.min(Math.max(requested, 2), 100000) : 6;
         const result = Math.floor(Math.random() * sides) + 1;
         await ctx.m.reply(`🎲 Rolled a ${result} (1-${sides})`);
       },

@@ -38,7 +38,7 @@ export default function infoCommands(): Command[] {
       description: 'Check bot response time',
       execute: async (ctx: CommandContext) => {
         const start = Date.now();
-        const sent = await ctx.m.reply('🏓 Pinging...');
+        await ctx.m.reply('🏓 Pinging...');
         const time = Date.now() - start;
         await ctx.m.send({ text: `🏓 Pong! ${time}ms` });
       },
