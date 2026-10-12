@@ -103,8 +103,11 @@ async function main() {
     logger.info('QR available at /pair');
   });
 
-  bot.on('loggedOut', () => {
-    logger.error('Logged out - session needs reset');
+  bot.on('loggedOut', (reason) => {
+    logger.error(
+      { reason },
+      'WhatsApp unlinked this device. The bot is rotating its session and will show a fresh QR at /pair so you can re-link it.'
+    );
   });
 
   process.on('SIGINT', () => {
@@ -135,28 +138,58 @@ async function main() {
 }
 
 /**
- * Render free tier sleeps after ~15 min with no inbound HTTP traffic. When the
- * service sleeps the Baileys socket dies mid-session and the next wake-up often
- * lands on a corrupted signal session ("Bad MAC") that requires a full re-pair.
+ * Keeps the bot up 24/7 without sleeping or logging out.
  *
- * Three layers keep it awake:
- *  1. Self-ping to /health every 9 min (inbound HTTP counts as activity).
- *  2. Outbound WhatsApp presence ping every 4 min (keeps the WA socket warm so
- *     it is not dropped as idle even if the HTTP layer is quiet).
- *  3. An optional external monitor (UptimeRobot / cron-job.org) hitting /health
- *     every 5 min as a belt-and-braces backstop.
+ * Why it previously "logged out": Render's free tier spins a web service down
+ * after ~15 minutes with no INBOUND traffic. A ping to 127.0.0.1 never leaves
+ * the container, so it does not count as activity — the old self-ping did not
+ * actually prevent the sleep. When the service is frozen the WhatsApp socket
+ * dies; the wake-up could then land on a half-written `creds.json` and look
+ * like a logout.
+ *
+ * Four layers now keep it alive:
+ *  1. A ping to the service's OWN public URL every 10 min. Render exposes that
+ *     as RENDER_EXTERNAL_URL; the request goes out and comes back through
+ *     Render's edge, so it registers as real inbound traffic and resets the
+ *     spin-down timer.
+ *  2. A loopback /health ping as a fallback liveness check when no public URL
+ *     is known (it does not stop the sleep on its own).
+ *  3. An outbound WhatsApp presence ping every 4 min so the socket is not
+ *     dropped as idle even when the HTTP layer is quiet.
+ *  4. Resilient, atomic credential persistence (see core/auth-state.ts) so an
+ *     abrupt freeze can never corrupt the session and force a re-pair.
+ *
+ * Even with all of this, a free Render instance can still be spun down for
+ * platform reasons, so point a free external monitor (UptimeRobot,
+ * cron-job.org, or a GitHub Action) at <your-url>/health every 5 minutes as a
+ * belt-and-braces backstop. On a paid instance this is unnecessary.
  */
 function startKeepAlive(bot: BotClient): void {
-  const SELF_PING_MS = 9 * 60 * 1000;
+  const PUBLIC_PING_MS = 10 * 60 * 1000;
+  const LOOPBACK_PING_MS = 9 * 60 * 1000;
   const WA_PING_MS = 4 * 60 * 1000;
 
+  const publicUrl = (process.env.RENDER_EXTERNAL_URL || '').trim().replace(/\/+$/, '');
+  const pingUrl = publicUrl ? `${publicUrl}/health` : `http://127.0.0.1:${config.PORT}/health`;
+  const pingMs = publicUrl ? PUBLIC_PING_MS : LOOPBACK_PING_MS;
+
   const selfPing = setInterval(() => {
-    const url = `http://127.0.0.1:${config.PORT}/health`;
-    fetch(url, { signal: AbortSignal.timeout(10000) })
-      .then(r => logger.debug({ status: r.status }, 'Keepalive self-ping'))
-      .catch(err => logger.warn({ err: err?.message }, 'Keepalive self-ping failed'));
-  }, SELF_PING_MS);
+    fetch(pingUrl, { signal: AbortSignal.timeout(10000) })
+      .then(r => logger.debug({ status: r.status, url: pingUrl }, 'Keepalive ping'))
+      .catch(err => logger.warn({ err: err?.message, url: pingUrl }, 'Keepalive ping failed'));
+  }, pingMs);
   selfPing.unref();
+
+  // Validate the loopback endpoint too, so a broken HTTP layer is visible in
+  // the logs rather than only showing up as a routing failure.
+  if (publicUrl) {
+    const loopback = setInterval(() => {
+      fetch(`http://127.0.0.1:${config.PORT}/health`, { signal: AbortSignal.timeout(10000) })
+        .then(r => logger.debug({ status: r.status }, 'Keepalive loopback check'))
+        .catch(err => logger.warn({ err: err?.message }, 'Keepalive loopback check failed'));
+    }, LOOPBACK_PING_MS);
+    loopback.unref();
+  }
 
   const waPing = setInterval(() => {
     const sock = bot.getSocket();
@@ -165,8 +198,15 @@ function startKeepAlive(bot: BotClient): void {
   }, WA_PING_MS);
   waPing.unref();
 
+  if (!publicUrl) {
+    logger.warn(
+      { pingUrl },
+      'RENDER_EXTERNAL_URL is not set - only loopback keepalive is active, which does NOT stop a free-tier sleep. Add an external monitor hitting /health every 5 minutes, or run on a paid instance.'
+    );
+  }
+
   logger.info(
-    { selfPingMin: SELF_PING_MS / 60000, waPingMin: WA_PING_MS / 60000 },
+    { pingUrl, pingMin: pingMs / 60000, waPingMin: WA_PING_MS / 60000, publicUrl: publicUrl || null },
     'Keepalive started'
   );
 }

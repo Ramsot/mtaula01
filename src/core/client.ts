@@ -1,20 +1,26 @@
 import {
   makeWASocket,
-  useMultiFileAuthState,
-  DisconnectReason,
   makeCacheableSignalKeyStore,
   Browsers,
   fetchLatestBaileysVersion,
   type WASocket,
 } from 'baileys';
 import { EventEmitter } from 'events';
+import fs from 'fs/promises';
 import qrcode from 'qrcode';
 import config from '../config/index.js';
 import logger from './logger.js';
 import { serialize, decodeJid } from './serializer.js';
 import { CommandRegistry } from './registry.js';
 import { askAI, type ChatTurn } from './ai.js';
+import { useResilientAuthState } from './auth-state.js';
+import { classifyDisconnect } from './reconnect.js';
+import { MessageCache } from './message-cache.js';
 import type { BotState, SerializedMessage, CommandContext } from './types.js';
+
+/** How long a socket may stay silent before the watchdog forces a reconnect. */
+const WATCHDOG_INTERVAL_MS = 60_000;
+const WATCHDOG_STUCK_MS = 3 * 60_000;
 
 export class BotClient extends EventEmitter {
   private sock: WASocket | null = null;
@@ -25,11 +31,14 @@ export class BotClient extends EventEmitter {
   private lastError: string | null = null;
   private currentQr: string | null = null;
   private qrTimestamp: number | null = null;
+  private lastTransitionAt = Date.now();
+  private reconnectTimer: NodeJS.Timeout | null = null;
+  private watchdog: NodeJS.Timeout | null = null;
+  private watchdogRunning = false;
+  private logoutRecoveryRunning = false;
   private registry = new CommandRegistry();
-  private messageStore = new Map<string, any>();
+  private messageCache = new MessageCache();
   private chatHistories = new Map<string, Array<{ role: string; content: string }>>();
-  private static MAX_STORE_SIZE = 10000;
-  private static MESSAGE_TTL = 48 * 60 * 60 * 1000;
   private static MAX_HISTORY = 30;
   private ready: Promise<void>;
 
@@ -98,8 +107,8 @@ export class BotClient extends EventEmitter {
     this.connectionState = 'close';
     this.currentQr = null;
     this.lastError = null;
+    this.reconnectAttempts = 0;
 
-    const fs = await import('fs/promises');
     try { await fs.rm(config.SESSION_DIR, { recursive: true, force: true }); } catch {}
     await fs.mkdir(config.SESSION_DIR, { recursive: true }).catch(() => {});
 
@@ -117,9 +126,11 @@ export class BotClient extends EventEmitter {
   async connect(): Promise<void> {
     if (this.isConnecting) return;
     this.isConnecting = true;
+    this.lastTransitionAt = Date.now();
+    this.startWatchdog();
 
     try {
-      const { state, saveCreds } = await useMultiFileAuthState(config.SESSION_DIR);
+      const { state, saveCreds } = await useResilientAuthState(config.SESSION_DIR);
       this.registered = !!state.creds.registered;
       logger.info({ registered: this.registered }, 'Auth state loaded');
 
@@ -150,6 +161,10 @@ export class BotClient extends EventEmitter {
         syncFullHistory: false,
         markOnlineOnConnect: config.ALWAYS_ONLINE,
         qrTimeout: 0,
+        // Required so WhatsApp's decryption retries can be answered. Without
+        // this Baileys defaults to `async () => undefined`, the re-send never
+        // happens, and chats get stuck on "Waiting for this message".
+        getMessage: async (key: any) => this.messageCache.get(key?.id)?.message,
       });
 
       this.sock = sock;
@@ -165,27 +180,31 @@ export class BotClient extends EventEmitter {
           this.emit('qr', qr);
         }
 
+        this.lastTransitionAt = Date.now();
+
         if (connection === 'close') {
           this.connectionState = 'close';
           const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
           this.lastError = lastDisconnect?.error?.message || `closed (code ${statusCode})`;
-          const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-          logger.warn({ statusCode, shouldReconnect }, 'Connection closed');
+          const hasQr = !!this.currentQr;
+          const decision = classifyDisconnect(statusCode, this.reconnectAttempts, hasQr);
+          logger.warn({ statusCode, decision }, 'Connection closed');
 
-          if (shouldReconnect) {
-            this.reconnectAttempts++;
-            const hasQr = !!this.currentQr;
-            const delay = hasQr
-              ? Math.min(8000 * this.reconnectAttempts, 30000)
-              : Math.min(5000 * 2 ** Math.min(this.reconnectAttempts, 4), 60000);
-            logger.info({ attempt: this.reconnectAttempts, delayMs: delay, hasQr }, 'Reconnecting');
-            setTimeout(() => {
-              this.isConnecting = false;
-              this.connect().catch(() => {});
-            }, delay);
+          if (decision.action === 'logout') {
+            // The device really was unlinked (401/411); credentials are dead.
+            // Rotate to a fresh state and offer a new QR automatically so the
+            // bot recovers on its own instead of sitting dead until a manual
+            // reset. Only 401/411 reach here — transient drops never wipe.
+            logger.error({ statusCode, reason: decision.reason }, 'WhatsApp unlinked this device');
+            this.emit('loggedOut', decision.reason);
+            this.scheduleLoggedOutRecovery();
           } else {
-            logger.error('Logged out - session invalid, reset needed');
-            this.emit('loggedOut');
+            if (decision.resetBackoff) {
+              this.reconnectAttempts = 0;
+            } else {
+              this.reconnectAttempts++;
+            }
+            this.scheduleReconnect(decision.delayMs, statusCode);
           }
         } else if (connection === 'open') {
           this.connectionState = 'open';
@@ -194,6 +213,7 @@ export class BotClient extends EventEmitter {
           this.lastError = null;
           this.registered = true;
           this.currentQr = null;
+          this.lastTransitionAt = Date.now();
           logger.info({ jid: sock.user?.id }, 'Connected to WhatsApp');
           this.emit('connected', sock.user?.id);
 
@@ -201,7 +221,7 @@ export class BotClient extends EventEmitter {
             await sock.sendPresenceUpdate('available').catch(() => {});
             setInterval(() => {
               sock.sendPresenceUpdate('available').catch(() => {});
-            }, 30000);
+            }, 30000).unref();
           }
         }
       });
@@ -209,6 +229,14 @@ export class BotClient extends EventEmitter {
       sock.ev.on('creds.update', saveCreds);
 
       sock.ev.on('messages.upsert', async ({ messages, type }) => {
+        // Cache EVERY upsert first — including our own outgoing messages, which
+        // Baileys emits with type 'append' when emitOwnEvents is on. Retries can
+        // only be answered for messages we still hold, so skipping 'append' was
+        // exactly why the bot's own replies hung on "Waiting for this message".
+        for (const raw of messages) {
+          this.storeMessage(raw);
+        }
+
         if (type !== 'notify') return;
         for (const raw of messages) {
           try {
@@ -242,16 +270,86 @@ export class BotClient extends EventEmitter {
     } catch (error: any) {
       logger.error({ err: error?.message }, 'Failed to initialize connection');
       this.isConnecting = false;
-      setTimeout(() => this.connect().catch(() => {}), 10000);
+      this.scheduleReconnect(10000, undefined);
     }
+  }
+
+  /** Schedule exactly one reconnect; the watchdog replaces any that is lost. */
+  private scheduleReconnect(delayMs: number, statusCode: number | undefined): void {
+    if (this.reconnectTimer) return;
+    logger.info({ attempt: this.reconnectAttempts, delayMs, statusCode }, 'Reconnecting');
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.isConnecting = false;
+      this.connect().catch(() => {});
+    }, delayMs);
+    this.reconnectTimer.unref();
+  }
+
+  /**
+   * Last-resort watchdog. If the socket has been down (or stuck mid-handshake)
+   * for several minutes with no reconnect pending, force one. This covers cases
+   * where a `connection.update` event is never delivered — e.g. the process was
+   * frozen by the host and the socket silently died — which previously left the
+   * bot permanently offline until a manual restart.
+   */
+  private startWatchdog(): void {
+    if (this.watchdogRunning) return;
+    this.watchdogRunning = true;
+    this.watchdog = setInterval(() => {
+      if (this.logoutRecoveryRunning) return;
+      if (this.reconnectTimer) return;
+      if (this.connectionState === 'open' && this.registered) return;
+      const silentFor = Date.now() - this.lastTransitionAt;
+      if (silentFor < WATCHDOG_STUCK_MS) return;
+      logger.warn({ silentFor, connectionState: this.connectionState }, 'Watchdog: forcing reconnect');
+      this.lastTransitionAt = Date.now();
+      this.isConnecting = false;
+      this.connect().catch(() => {});
+    }, WATCHDOG_INTERVAL_MS);
+    this.watchdog.unref();
+  }
+
+  /**
+   * After a real unlink, drop the dead session and reconnect so a fresh QR is
+   * generated automatically. Without this the owner had to notice the logout
+   * and re-pair by hand.
+   */
+  private scheduleLoggedOutRecovery(): void {
+    if (this.logoutRecoveryRunning) return;
+    this.logoutRecoveryRunning = true;
+    setTimeout(async () => {
+      try {
+        if (this.sock) {
+          try { this.sock.end(undefined); } catch {}
+          this.sock = null;
+        }
+        await fs.rm(config.SESSION_DIR, { recursive: true, force: true });
+        await fs.mkdir(config.SESSION_DIR, { recursive: true });
+        logger.warn('Re-pairing required: open /pair to scan a new QR');
+      } catch (err: any) {
+        logger.error({ err: err?.message }, 'Failed to reset session after logout');
+      } finally {
+        this.reconnectAttempts = 0;
+        this.isConnecting = false;
+        this.connectionState = 'close';
+        this.registered = false;
+        this.lastTransitionAt = Date.now();
+        this.logoutRecoveryRunning = false;
+        this.connect().catch(() => {});
+      }
+    }, 3000).unref();
   }
 
   private async handleMessage(raw: any): Promise<void> {
     if (!this.sock) return;
     await this.ready.catch(() => {});
 
+    // Always retain recent messages so retry requests can be served (getMessage
+    // above) — this is what clears "Waiting for this message" for our own sends.
+    this.storeMessage(raw);
+
     if ((globalThis as any).__antiDelete) {
-      this.storeMessage(raw);
       this.checkProtocolMessage(raw).catch(() => {});
     }
 
@@ -360,27 +458,10 @@ export class BotClient extends EventEmitter {
 
   private storeMessage(raw: any): void {
     try {
-      if (!raw.key?.id || !raw.message) return;
+      if (!raw?.key?.id || !raw.message) return;
+      // Revoke/protocol messages carry no re-sendable content.
       if (raw.message.protocolMessage) return;
-
-      const entry = {
-        ...raw,
-        _storedAt: Date.now(),
-      };
-
-      this.messageStore.set(raw.key.id, entry);
-
-      const now = Date.now();
-      for (const [key, data] of this.messageStore.entries()) {
-        if (now - data._storedAt > BotClient.MESSAGE_TTL) {
-          this.messageStore.delete(key);
-        }
-      }
-
-      if (this.messageStore.size > BotClient.MAX_STORE_SIZE) {
-        const oldestKey = Array.from(this.messageStore.keys())[0];
-        this.messageStore.delete(oldestKey);
-      }
+      this.messageCache.set(raw.key.id, raw);
     } catch (err) {
       logger.error({ err }, 'Failed to store message');
     }
@@ -401,7 +482,7 @@ export class BotClient extends EventEmitter {
     const deletedKey = proto.key?.id;
     if (!deletedKey) return;
 
-    const original = this.messageStore.get(deletedKey);
+    const original = this.messageCache.get(deletedKey);
     if (!original) return;
 
     const botJid = decodeJid(this.sock.user?.id || '');
@@ -509,7 +590,7 @@ export class BotClient extends EventEmitter {
       }
     }
 
-    this.messageStore.delete(deletedKey);
+    this.messageCache.delete(deletedKey);
     logger.info({ deletedKey, from: sender, isGroup }, 'Anti-delete: message forwarded to owner');
   }
 
