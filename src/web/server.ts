@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs/promises';
 import { fileURLToPath } from 'url';
 import config from '../config/index.js';
 import logger from '../core/logger.js';
@@ -78,6 +79,47 @@ export function createWebServer(bot: BotClient): express.Application {
     try {
       res.json({ success: true, message: 'Session cleared' });
       await bot.resetSession();
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  app.get('/api/session/export', requireAdmin, async (_req, res) => {
+    try {
+      const dir = config.SESSION_DIR;
+      const files = await fs.readdir(dir).catch(() => []);
+      const session: Record<string, string> = {};
+      for (const f of files) {
+        if (f.endsWith('.json')) {
+          const content = await fs.readFile(path.join(dir, f), 'utf-8');
+          session[f] = content;
+        }
+      }
+      if (Object.keys(session).length === 0) {
+        res.status(404).json({ success: false, error: 'No session files found' });
+        return;
+      }
+      res.json({ success: true, session });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  app.post('/api/session/import', requireAdmin, async (req, res) => {
+    try {
+      const { session } = req.body;
+      if (!session || typeof session !== 'object') {
+        res.status(400).json({ success: false, error: 'Session data required' });
+        return;
+      }
+      const dir = config.SESSION_DIR;
+      await fs.mkdir(dir, { recursive: true });
+      for (const [f, content] of Object.entries(session)) {
+        if (f.endsWith('.json') && typeof content === 'string') {
+          await fs.writeFile(path.join(dir, f), content);
+        }
+      }
+      res.json({ success: true, message: 'Session imported. Restart bot to use it.' });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err?.message });
     }

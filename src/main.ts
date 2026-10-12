@@ -25,17 +25,23 @@ async function checkSessionDir(): Promise<void> {
       hasSession = true;
     } catch {}
 
-    logger.info({ dir, hasSession }, 'Session directory is writable');
+    const isPersistent = dir.startsWith('/data') || dir.startsWith('/mnt');
+    logger.info({ dir, hasSession, isPersistent }, 'Session directory is writable');
+
     if (!hasSession) {
+      logger.warn({ dir }, 'No saved session - pair via /pair');
+    }
+
+    if (!isPersistent) {
       logger.warn(
         { dir },
-        'No saved session found - pair via /pair. It will be reused across restarts if this dir is on a persistent Disk.'
+        'Session dir is NOT on a persistent Disk! Every Render redeploy will wipe it and force re-pair. Fix: Render Dashboard > Disks > Add Disk (mountPath: /data) then set SESSION_DIR=/data/auth_info_baileys'
       );
     }
   } catch (err: any) {
     logger.error(
       { dir, err: err?.message },
-      'Session directory is NOT writable - the WhatsApp session cannot be saved and every restart will require re-pairing. On Render, use a Disk mounted at SESSION_DIR and run the container as root (or ensure the mount is writable).'
+      'Session directory is NOT writable - session cannot be saved'
     );
   }
 }
