@@ -16,11 +16,24 @@ import { askAI, type ChatTurn } from './ai.js';
 import { useResilientAuthState } from './auth-state.js';
 import { classifyDisconnect } from './reconnect.js';
 import { MessageCache } from './message-cache.js';
+import { CommandCooldown } from './cooldown.js';
+import { RecentIds } from './dedupe.js';
+import { formatLocal } from './time.js';
+import { metrics, ledger } from './storage.js';
+import NodeCache from 'node-cache';
 import type { BotState, SerializedMessage, CommandContext } from './types.js';
 
 /** How long a socket may stay silent before the watchdog forces a reconnect. */
 const WATCHDOG_INTERVAL_MS = 60_000;
 const WATCHDOG_STUCK_MS = 3 * 60_000;
+/** Group metadata changes rarely; cache it so a busy group cannot hammer WhatsApp. */
+const GROUP_META_TTL_S = 300;
+/** Commands replayed from the offline backlog are processed a few at a time. */
+const BACKLOG_MAX_PER_BATCH = 5;
+/** Group invite links posted by non-admins (anti-link). */
+const INVITE_LINK_RE = /chat\.whatsapp\.com\/(?:invite\/)?([A-Za-z0-9]{10,})/;
+/** Commands that cost money / take long, so they get their own cooldown. */
+const EXPENSIVE_COMMANDS = new Set(['ai', 'img', 'imagine', 'draw', 'stt', 'transcribe', 'summarize', 'summary']);
 
 export class BotClient extends EventEmitter {
   private sock: WASocket | null = null;
@@ -38,6 +51,9 @@ export class BotClient extends EventEmitter {
   private logoutRecoveryRunning = false;
   private registry = new CommandRegistry();
   private messageCache = new MessageCache();
+  private cooldown = new CommandCooldown();
+  private recentIds = new RecentIds();
+  private groupMetaCache = new NodeCache({ stdTTL: GROUP_META_TTL_S, useClones: false });
   private chatHistories = new Map<string, Array<{ role: string; content: string }>>();
   private static MAX_HISTORY = 30;
   private ready: Promise<void>;
@@ -87,6 +103,27 @@ export class BotClient extends EventEmitter {
     return false;
   }
 
+  /**
+   * Cached group metadata lookup. Every caller (command dispatch, anti-link,
+   * Baileys' own internal fetches via `cachedGroupMetadata`) shares one cache,
+   * so a busy group costs one network call per GROUP_META_TTL_S instead of one
+   * per message.
+   */
+  async getGroupMetadata(jid: string): Promise<any | null> {
+    if (!jid) return null;
+    const cached = this.groupMetaCache.get(jid);
+    if (cached) return cached;
+    if (!this.sock) return null;
+    const meta = await this.sock.groupMetadata(jid);
+    this.groupMetaCache.set(jid, meta);
+    return meta;
+  }
+
+  /** Public for tests and for the dashboard's metrics view. */
+  getMetrics(): ReturnType<typeof metrics.snapshot> {
+    return metrics.snapshot();
+  }
+
   getQr(): string | null {
     return this.currentQr;
   }
@@ -108,6 +145,11 @@ export class BotClient extends EventEmitter {
     this.currentQr = null;
     this.lastError = null;
     this.reconnectAttempts = 0;
+
+    // Stale caches would otherwise survive into the new session.
+    this.groupMetaCache.flushAll();
+    this.recentIds.reset();
+    this.cooldown.reset();
 
     try { await fs.rm(config.SESSION_DIR, { recursive: true, force: true }); } catch {}
     await fs.mkdir(config.SESSION_DIR, { recursive: true }).catch(() => {});
@@ -165,6 +207,10 @@ export class BotClient extends EventEmitter {
         // this Baileys defaults to `async () => undefined`, the re-send never
         // happens, and chats get stuck on "Waiting for this message".
         getMessage: async (key: any) => this.messageCache.get(key?.id)?.message,
+        // Group metadata is fetched per group message to resolve admins; letting
+        // Baileys cache it (and reusing the same cache ourselves) keeps that off
+        // the network instead of one lookup per message.
+        cachedGroupMetadata: (async (jid: string) => this.getGroupMetadata(jid)) as any,
       });
 
       this.sock = sock;
@@ -237,7 +283,18 @@ export class BotClient extends EventEmitter {
           this.storeMessage(raw);
         }
 
-        if (type !== 'notify') return;
+        if (type !== 'notify') {
+          // WhatsApp replays everything the bot missed while it was asleep
+          // (a redeploy, or Render spinning the free tier down) with type
+          // 'append'. Those replays were dropped outright, so a command sent
+          // while the bot was offline silently never ran.
+          if (type === 'append') {
+            await this.handleBacklog(messages).catch(err =>
+              logger.error({ err: err?.message }, 'Backlog processing failed')
+            );
+          }
+          return;
+        }
         for (const raw of messages) {
           try {
             await this.handleMessage(raw);
@@ -341,13 +398,82 @@ export class BotClient extends EventEmitter {
     }, 3000).unref();
   }
 
+  /**
+   * Execute commands that arrived while the bot was offline.
+   *
+   * WhatsApp replays the missed window after a reconnect. Before this, the
+   * upsert handler returned early for anything that was not `notify`, so a
+   * message sent while the bot was asleep (Render free tier, a redeploy, a
+   * dropped socket) silently never ran. Only recent, prefixed, known commands
+   * are replayed — never arbitrary chat, which would otherwise have the bot
+   * answer hours-old messages (and trigger auto-chat / view-once twice).
+   */
+  private async handleBacklog(messages: any[]): Promise<void> {
+    if (!this.sock || !messages?.length) return;
+
+    const cutoff = Date.now() - config.BACKLOG_WINDOW_MIN * 60_000;
+    const candidates: any[] = [];
+
+    for (const raw of messages) {
+      const id: string | undefined = raw?.key?.id;
+      if (!id || !raw.message) continue;
+      if (raw.key.fromMe) continue;
+      if (raw.message.protocolMessage) continue;
+
+      const timestamp = Number(raw.messageTimestamp || 0) * 1000;
+      if (!timestamp || timestamp < cutoff) continue;
+      if (ledger.has(id) || this.recentIds.has(id)) continue;
+
+      const body: string =
+        raw.message.conversation || raw.message.extendedTextMessage?.text || '';
+      if (!body.startsWith(config.PREFIX)) continue;
+
+      const name = body.slice(config.PREFIX.length).split(' ')[0].trim().toLowerCase();
+      if (!name || !this.registry.find(name)) continue;
+
+      candidates.push(raw);
+    }
+
+    if (!candidates.length) return;
+
+    // Oldest first, but never flood: a long sleep can replay hundreds of
+    // messages, and acting on all of them at once is the fastest way to get
+    // the number flagged for spam.
+    candidates.sort((a, b) => Number(a.messageTimestamp) - Number(b.messageTimestamp));
+    const batch = candidates.slice(-BACKLOG_MAX_PER_BATCH);
+
+    metrics.backlogProcessed(batch.length);
+    logger.info(
+      { running: batch.length, missed: candidates.length },
+      'Running commands received while offline'
+    );
+
+    for (const raw of batch) {
+      try {
+        await this.handleMessage(raw);
+      } catch (err: any) {
+        logger.error({ err: err?.message, key: raw?.key?.id }, 'Backlog command failed');
+      }
+    }
+  }
+
   private async handleMessage(raw: any): Promise<void> {
     if (!this.sock) return;
     await this.ready.catch(() => {});
 
+    // Exact-once: the ledger remembers commands already executed (across
+    // restarts), recentIds covers everything else within this process.
+    const rawId: string | undefined = raw?.key?.id;
+    if (rawId) {
+      if (ledger.has(rawId)) return;
+      if (!this.recentIds.add(rawId)) return;
+    }
+
     // Always retain recent messages so retry requests can be served (getMessage
     // above) — this is what clears "Waiting for this message" for our own sends.
     this.storeMessage(raw);
+
+    metrics.messageReceived();
 
     if ((globalThis as any).__antiDelete) {
       this.checkProtocolMessage(raw).catch(() => {});
@@ -383,10 +509,20 @@ export class BotClient extends EventEmitter {
     let isAdmin = false;
     let isBotAdmin = false;
 
-    if (m.isGroup) {
+    // Only look up group metadata when something actually needs it: a command
+    // (for permission checks) or a possible anti-link violation. Doing it for
+    // every message is a needless network round-trip per message and a fast way
+    // to get the number rate-limited.
+    const needsAdminInfo =
+      m.isGroup &&
+      (isCommand || (config.ANTILINK && !isCreator && INVITE_LINK_RE.test(m.body)));
+
+    if (needsAdminInfo) {
       try {
-        const meta = await this.sock.groupMetadata(m.from);
-        const admins = meta.participants.filter((p: any) => p.admin === 'admin' || p.admin === 'superadmin');
+        const meta = await this.getGroupMetadata(m.from);
+        const admins = (meta?.participants || []).filter(
+          (p: any) => p.admin === 'admin' || p.admin === 'superadmin'
+        );
         const adminJids = admins.map((p: any) => p.id);
         isAdmin = adminJids.includes(m.sender);
         isBotAdmin = adminJids.includes(botJid);
@@ -395,7 +531,7 @@ export class BotClient extends EventEmitter {
 
     // Anti-link: remove group invite links from non-admins (owner exempt).
     if (config.ANTILINK && m.isGroup && !isCommand && !isAdmin && !isCreator) {
-      const inviteMatch = m.body.match(/chat\.whatsapp\.com\/(?:invite\/)?([A-Za-z0-9]{10,})/);
+      const inviteMatch = m.body.match(INVITE_LINK_RE);
       if (inviteMatch) {
         if (isBotAdmin) {
           await this.sock.sendMessage(m.from, { delete: m.key }).catch(() => {});
@@ -429,6 +565,32 @@ export class BotClient extends EventEmitter {
       await m.reply(`Unknown command: ${prefix}${cmd}\nType ${prefix}menu for available commands.`).catch(() => {});
       return;
     }
+
+    // Throttle before doing any work: this is what stops a single user from
+    // spamming the chat (and the bot's number getting banned for it).
+    if (!isCreator) {
+      const cooldownMs = command.cooldownMs ??
+        (EXPENSIVE_COMMANDS.has(command.name) ? config.AI_COOLDOWN_MS : config.COMMAND_COOLDOWN_MS);
+      const gate = this.cooldown.check(m.sender, command.name, {
+        cooldownMs,
+        windowMs: 60_000,
+        max: config.MAX_COMMANDS_PER_MINUTE,
+      });
+      if (!gate.ok) {
+        metrics.cooldownHit();
+        logger.info({ cmd, sender: m.sender, reason: gate.reason }, 'Command throttled');
+        if (this.cooldown.shouldWarn(m.sender)) {
+          const seconds = Math.max(1, Math.ceil(gate.retryAfterMs / 1000));
+          await m.reply(`⏳ Subiri sekunde ${seconds} kabla ya kutumia ${prefix}${cmd} tena.`).catch(() => {});
+        }
+        return;
+      }
+    }
+
+    // Persist the id: a redeploy replays the offline backlog, and the command
+    // must not run a second time on the way back up.
+    if (rawId) ledger.add(rawId);
+    metrics.command(command.name, command.category);
 
     const ctx: CommandContext = {
       m,
@@ -510,7 +672,7 @@ export class BotClient extends EventEmitter {
     if (isGroup) {
       header += `🗑️ *Deleted by:* @${(deletedBy || '').split('@')[0]}\n`;
     }
-    header += `⏰ *Time:* ${new Date().toLocaleString()}\n`;
+    header += `⏰ *Time:* ${formatLocal()}\n`;
 
     const mentions = [sender, deletedBy].filter(Boolean);
 
@@ -736,9 +898,16 @@ export class BotClient extends EventEmitter {
   }
 
   private async handleGroupUpdate(update: any): Promise<void> {
-    if (!this.sock || !config.WELCOME) return;
+    if (!this.sock) return;
     const { id, participants, action } = update;
+    // Admin lists just changed: drop the cached copy so permissions are correct
+    // immediately instead of up to GROUP_META_TTL_S later.
+    this.groupMetaCache.del(id);
     if (action !== 'add' && action !== 'remove') return;
+    // WELCOME and GOODBYE are separate switches — gating both on WELCOME meant
+    // `.goodbye on` alone did nothing.
+    if (action === 'add' && !config.WELCOME) return;
+    if (action === 'remove' && !config.GOODBYE) return;
 
     for (const participant of participants) {
       const tag = `@${participant.split('@')[0]}`;

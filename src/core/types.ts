@@ -11,7 +11,9 @@ export type CommandCategory =
   | 'search'
   | 'converter'
   | 'owner'
-  | 'media';
+  | 'media'
+  | 'security'
+  | 'media-ai';
 
 export interface CommandContext {
   m: SerializedMessage;
@@ -35,6 +37,8 @@ export interface Command {
   description: string;
   usage?: string;
   example?: string;
+  /** Per-command cooldown override; expensive AI commands set this higher. */
+  cooldownMs?: number;
   execute: (ctx: CommandContext) => Promise<void>;
 }
 
@@ -85,11 +89,14 @@ export interface BotConfig {
   GEMINI_KEY: string;
   OPENAI_KEY: string;
   GROQ_KEY: string;
-  META_AI_TOKEN: string;
-  TENOR_KEY: string;
   META_AI_NUMBER: string;
   ADMIN_TOKEN: string;
+  GEMINI_MODEL: string;
+  GROQ_MODEL: string;
   OPENAI_MODEL: string;
+  GEMINI_IMAGE_MODEL: string;
+  GROQ_STT_MODEL: string;
+  AI_SELFTEST: boolean;
   ALWAYS_ONLINE: boolean;
   AUTO_READ: boolean;
   AUTO_TYPING: boolean;
@@ -101,6 +108,12 @@ export interface BotConfig {
   ANTILINK: boolean;
   DEBUG_MODE: boolean;
   TIMEZONE: string;
+  COMMAND_COOLDOWN_MS: number;
+  AI_COOLDOWN_MS: number;
+  MAX_COMMANDS_PER_MINUTE: number;
+  BACKLOG_WINDOW_MIN: number;
+  SECURITY_TOOLS: boolean;
+  PORTSCAN_MAX_PORTS: number;
   SESSION_DIR: string;
   DATA_DIR: string;
   PORT: number;

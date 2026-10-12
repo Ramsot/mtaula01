@@ -1,3 +1,4 @@
+import config from '../../config/index.js';
 import type { Command, CommandContext } from '../../core/types.js';
 
 export default function downloadCommands(): Command[] {
@@ -12,6 +13,10 @@ export default function downloadCommands(): Command[] {
         if (!ctx.text) return ctx.m.reply(`Usage: ${ctx.prefix}play <song name or URL>`);
 
         await ctx.m.react('⏳').catch(() => {});
+        // AUTO_RECORDING: show the recording indicator while audio is fetched.
+        if (config.AUTO_RECORDING) {
+          await ctx.sock.sendPresenceUpdate('recording', ctx.m.from).catch(() => {});
+        }
 
         try {
           const { ytSearch, ytVideoInfo } = await import('../../utils/youtube.js');
@@ -50,6 +55,8 @@ export default function downloadCommands(): Command[] {
         } catch (err: any) {
           await ctx.m.react('❌').catch(() => {});
           await ctx.m.reply(`❌ Download error: ${err?.message}\n\n💡 Try a shorter/older video, or use ${ctx.prefix}yts to pick a specific result.`);
+        } finally {
+          await ctx.sock.sendPresenceUpdate('paused', ctx.m.from).catch(() => {});
         }
       },
     },

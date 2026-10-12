@@ -1,3 +1,4 @@
+import { setRuntimeSetting } from '../../core/settings.js';
 import type { Command, CommandContext } from '../../core/types.js';
 
 export default function autochatCommands(): Command[] {
@@ -14,7 +15,8 @@ export default function autochatCommands(): Command[] {
           return;
         }
         const on = ctx.args[0] === 'on';
-        (globalThis as any).__autoChat = on;
+        // Persisted: auto-chat used to switch itself off on every redeploy.
+        setRuntimeSetting('autoChat', on);
         await ctx.m.reply(
           `✅ *AI Auto-Chat ${on ? 'ENABLED' : 'DISABLED'}*\n\n` +
           (on
@@ -42,7 +44,7 @@ export default function autochatCommands(): Command[] {
           return;
         }
         const on = ctx.args[0] === 'on';
-        (globalThis as any).__autoChatGroup = on;
+        setRuntimeSetting('autoChatGroup', on);
         await ctx.m.reply(
           `✅ *AI Group Chat ${on ? 'ENABLED' : 'DISABLED'}*\n\n` +
           (on

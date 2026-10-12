@@ -1,3 +1,4 @@
+import { setRuntimeSetting } from '../../core/settings.js';
 import type { Command, CommandContext } from '../../core/types.js';
 
 export default function antiDeleteCommands(): Command[] {
@@ -14,7 +15,8 @@ export default function antiDeleteCommands(): Command[] {
           return;
         }
         const on = ctx.args[0] === 'on';
-        (globalThis as any).__antiDelete = on;
+        // Persisted, so the owner does not have to re-enable it after a redeploy.
+        setRuntimeSetting('antiDelete', on);
         await ctx.m.reply(
           `✅ *Anti-Delete ${on ? 'ENABLED' : 'DISABLED'}*\n\n` +
           (on
@@ -44,7 +46,7 @@ export default function antiDeleteCommands(): Command[] {
           return;
         }
         const on = ctx.args[0] === 'on';
-        (globalThis as any).__antiDeleteStatus = on;
+        setRuntimeSetting('antiDeleteStatus', on);
         await ctx.m.reply(
           `✅ *Anti-Delete Status ${on ? 'ENABLED' : 'DISABLED'}*\n\n` +
           (on

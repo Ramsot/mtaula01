@@ -4,8 +4,26 @@ import { BotClient } from './core/client.js';
 import { createWebServer } from './web/server.js';
 import { adminStore } from './core/admin.js';
 import { pairingStore } from './core/pairing.js';
-import { aiDiagnostics, availableAiEngines } from './core/ai.js';
+import { aiDiagnostics, availableAiEngines, runAiSelfTest } from './core/ai.js';
+import { initStorage, flushStorage, metrics } from './core/storage.js';
+import { applyStoredSettings } from './core/settings.js';
 import fs from 'fs/promises';
+
+/**
+ * Stop the bot cleanly: close the socket, then persist anything buffered.
+ * Without the flush a redeploy could lose the last few seconds of metrics and
+ * ledger entries (and with them the guarantee a command runs only once).
+ */
+async function shutdown(signal: string): Promise<void> {
+  logger.info({ signal }, 'Shutting down');
+  const sock = activeBot?.getSocket();
+  if (sock) { try { sock.end(undefined); } catch {} }
+  await flushStorage().catch(err => logger.error({ err: err?.message }, 'Flush failed'));
+  process.exit(0);
+}
+
+/** Set once the client exists, so the signal handlers can reach it. */
+let activeBot: BotClient | null = null;
 
 /**
  * Verify the WhatsApp session directory is actually writable. If it is not
@@ -88,7 +106,14 @@ async function main() {
   await adminStore.load();
   await pairingStore.load();
 
+  // Metrics, the processed-command ledger and owner-changed settings all live
+  // on DATA_DIR. Load them before the socket so a replayed message sees the
+  // ledger, and restore settings so `.mode self` survives a redeploy.
+  await initStorage();
+  applyStoredSettings();
+
   const bot = new BotClient();
+  activeBot = bot;
   const app = createWebServer(bot);
 
   app.listen(config.PORT, '0.0.0.0', () => {
@@ -110,31 +135,31 @@ async function main() {
     );
   });
 
-  process.on('SIGINT', () => {
-    logger.info('Shutting down');
-    const sock = bot.getSocket();
-    if (sock) { try { sock.end(undefined); } catch {} }
-    process.exit(0);
-  });
-
-  process.on('SIGTERM', () => {
-    logger.info('Shutting down (SIGTERM)');
-    const sock = bot.getSocket();
-    if (sock) { try { sock.end(undefined); } catch {} }
-    process.exit(0);
-  });
+  process.on('SIGINT', () => { void shutdown('SIGINT'); });
+  process.on('SIGTERM', () => { void shutdown('SIGTERM'); });
 
   process.on('uncaughtException', (err) => {
     logger.error({ err: err.message }, 'Uncaught exception');
+    metrics.recordError(`uncaughtException: ${err.message}`);
   });
 
   process.on('unhandledRejection', (reason) => {
     logger.error({ reason }, 'Unhandled rejection');
+    metrics.recordError(`unhandledRejection: ${String(reason)}`);
   });
 
   startKeepAlive(bot);
 
   await bot.connect();
+
+  // Verify the model ids and keys actually work, once, at boot. Model ids get
+  // retired by providers; without this the first warning is a user's failed
+  // `.ai` command after a deploy. Non-fatal by design.
+  if (config.AI_SELFTEST) {
+    runAiSelfTest()
+      .then(results => logger.info({ results }, 'AI self-test finished'))
+      .catch(err => logger.warn({ err: err?.message }, 'AI self-test failed'));
+  }
 }
 
 /**
@@ -211,7 +236,8 @@ function startKeepAlive(bot: BotClient): void {
   );
 }
 
-main().catch((err) => {
+main().catch(async (err) => {
   logger.error({ err: err?.message }, 'Failed to start');
+  await flushStorage().catch(() => {});
   process.exit(1);
 });

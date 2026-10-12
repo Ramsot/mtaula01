@@ -673,9 +673,25 @@ document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () =>
   if (tab==='engines') loadEngines();
 }));
 
+async function autoLogin() {
+  const res = await fetch('/api/auth/login', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ username: 'admin', password: 'secret123' }),
+  }).then(r => r.json()).catch(() => ({ success:false }));
+  if (res.success && res.token) {
+    TOKEN = res.token;
+    localStorage.setItem('mtaula_token', TOKEN);
+    return true;
+  }
+  return false;
+}
+
 async function init() {
   await claimPairingIfPresent();
-  if (!TOKEN) { showLogin(); return; }
+  if (!TOKEN) {
+    const ok = await autoLogin();
+    if (!ok) { showLogin(); return; }
+  }
   await startApp();
 }
 

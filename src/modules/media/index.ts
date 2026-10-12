@@ -1,3 +1,4 @@
+import { setRuntimeSetting } from '../../core/settings.js';
 import type { Command, CommandContext } from '../../core/types.js';
 
 export default function viewOnceCommands(): Command[] {
@@ -105,8 +106,8 @@ export default function viewOnceCommands(): Command[] {
           return;
         }
         const on = ctx.args[0] === 'on';
-        // Store in global flag
-        (globalThis as any).__autoVO = on;
+        // Persisted so view-once capture survives a redeploy.
+        setRuntimeSetting('autoViewOnce', on);
         await ctx.m.reply(
           `✅ Auto-save view-once ${on ? '**ENABLED**' : '**DISABLED**'}\n\n` +
           (on
@@ -127,11 +128,13 @@ export default function viewOnceCommands(): Command[] {
           return;
         }
         const on = ctx.args[0] === 'on';
-        (globalThis as any).__antiCVO = on;
+        // This flag used to be written to a global nothing ever read, so the
+        // command was a no-op. It drives the same persisted switch as .autovo.
+        setRuntimeSetting('autoViewOnce', on);
         await ctx.m.reply(
           `✅ Anti copy-view-once ${on ? '**ENABLED**' : '**DISABLED**'}\n\n` +
           (on
-            ? '🔒 When someone copies a view-once media, it will be saved and owner notified.'
+            ? '🔒 View-once media is saved and forwarded to the owner (same switch as .autovo).'
             : '🔓 Anti copy-view-once disabled.')
         );
       },

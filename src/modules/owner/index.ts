@@ -1,4 +1,5 @@
 import config from '../../config/index.js';
+import { getStoredSettings, setRuntimeSetting } from '../../core/settings.js';
 import type { Command, CommandContext } from '../../core/types.js';
 
 export default function ownerCommands(): Command[] {
@@ -187,8 +188,8 @@ export default function ownerCommands(): Command[] {
           return;
         }
         const on = ctx.args[0] === 'on';
-        config.AUTO_TYPING = on;
-        await ctx.m.reply(`✅ Auto-typing ${on ? 'enabled' : 'disabled'}`);
+        setRuntimeSetting('autoTyping', on);
+        await ctx.m.reply(`✅ Auto-typing ${on ? 'enabled' : 'disabled'}\n💾 Saved - survives a restart.`);
       },
     },
     {
@@ -203,11 +204,11 @@ export default function ownerCommands(): Command[] {
           return;
         }
         const on = ctx.args[0] === 'on';
-        config.ALWAYS_ONLINE = on;
+        setRuntimeSetting('alwaysOnline', on);
         if (on) {
           await ctx.sock.sendPresenceUpdate('available').catch(() => {});
         }
-        await ctx.m.reply(`✅ Always online ${on ? 'enabled' : 'disabled'}`);
+        await ctx.m.reply(`✅ Always online ${on ? 'enabled' : 'disabled'}\n💾 Saved - survives a restart.`);
       },
     },
     {
@@ -222,8 +223,8 @@ export default function ownerCommands(): Command[] {
           return;
         }
         const on = ctx.args[0] === 'on';
-        config.AUTO_READ = on;
-        await ctx.m.reply(`✅ Auto-read ${on ? 'enabled' : 'disabled'}`);
+        setRuntimeSetting('autoRead', on);
+        await ctx.m.reply(`✅ Auto-read ${on ? 'enabled' : 'disabled'}\n💾 Saved - survives a restart.`);
       },
     },
     {
@@ -241,8 +242,39 @@ export default function ownerCommands(): Command[] {
           await ctx.m.reply(`Usage: ${ctx.prefix}mode public|self`);
           return;
         }
-        config.MODE = mode;
-        await ctx.m.reply(`✅ Mode set to: ${mode}`);
+        setRuntimeSetting('mode', mode as 'public' | 'self');
+        await ctx.m.reply(`✅ Mode set to: ${mode}\n💾 Saved - survives a restart.`);
+      },
+    },
+    {
+      name: 'settings',
+      aliases: ['toggles'],
+      category: 'owner',
+      description: 'Show the runtime toggles that are saved across restarts',
+      example: '.settings',
+      execute: async (ctx: CommandContext) => {
+        if (!ctx.isCreator) {
+          await ctx.m.reply('❌ Owner only command!');
+          return;
+        }
+        const saved = getStoredSettings();
+        const entries = Object.entries(saved);
+        const lines = entries.length
+          ? entries.map(([k, v]) => `• ${k}: ${v}`).join('\n')
+          : '• (nothing changed from .env yet)';
+
+        await ctx.m.reply(
+          `⚙️ *Saved settings*\n\n${lines}\n\n` +
+          `🧩 Live config\n` +
+          `• mode: ${config.MODE}\n` +
+          `• autoRead: ${config.AUTO_READ}\n` +
+          `• autoTyping: ${config.AUTO_TYPING}\n` +
+          `• alwaysOnline: ${config.ALWAYS_ONLINE}\n` +
+          `• antilink: ${config.ANTILINK}\n` +
+          `• welcome: ${config.WELCOME} / goodbye: ${config.GOODBYE}\n\n` +
+          `🛡️ Cooldown: ${config.COMMAND_COOLDOWN_MS}ms (AI ${config.AI_COOLDOWN_MS}ms), ` +
+          `${config.MAX_COMMANDS_PER_MINUTE} cmd/min`
+        );
       },
     },
     {

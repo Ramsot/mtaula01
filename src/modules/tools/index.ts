@@ -1,3 +1,4 @@
+import config from '../../config/index.js';
 import type { Command, CommandContext } from '../../core/types.js';
 
 /**
@@ -56,7 +57,13 @@ export default function toolCommands(): Command[] {
           const text = ctx.args[0]?.length === 2 && /^[a-z]{2}$/.test(ctx.args[0]) ? ctx.args.slice(1).join(' ') : ctx.text;
           if (!text) return ctx.m.reply(`Usage: ${ctx.prefix}tts <text>`);
           const url = getAudioUrl(text.slice(0, 200), { lang, slow: false });
+          // AUTO_RECORDING used to be config nothing read: show the recording
+          // indicator while an audio clip is being produced.
+          if (config.AUTO_RECORDING) {
+            await ctx.sock.sendPresenceUpdate('recording', ctx.m.from).catch(() => {});
+          }
           await ctx.m.send({ audio: { url }, mimetype: 'audio/mpeg' });
+          await ctx.sock.sendPresenceUpdate('paused', ctx.m.from).catch(() => {});
         } catch (err: any) {
           await ctx.m.reply(`❌ TTS error: ${err?.message}`);
         }

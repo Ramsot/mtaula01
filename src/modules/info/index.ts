@@ -1,5 +1,7 @@
 import config from '../../config/index.js';
 import { formatUptime, formatBytes } from '../../core/serializer.js';
+import { metrics } from '../../core/storage.js';
+import { formatLocal, timezoneName } from '../../core/time.js';
 import type { Command, CommandContext, CommandCategory } from '../../core/types.js';
 import os from 'os';
 
@@ -14,6 +16,8 @@ const CATEGORY_EMOJI: Record<string, string> = {
   converter: '🔄',
   owner: '👑',
   media: '🎨',
+  security: '🛡️',
+  'media-ai': '🧠',
 };
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -27,6 +31,8 @@ const CATEGORY_LABELS: Record<string, string> = {
   converter: 'CONVERTER',
   owner: 'OWNER',
   media: 'MEDIA AI',
+  security: 'SECURITY TOOLS',
+  'media-ai': 'AI MEDIA',
 };
 
 export default function infoCommands(): Command[] {
@@ -61,6 +67,7 @@ export default function infoCommands(): Command[] {
         await ctx.m.reply(
           `🤖 *${config.BOT_NAME} is alive!*\n\n` +
           `✅ Status: Online\n` +
+          `🕐 Time: ${formatLocal()} (${timezoneName()})\n` +
           `⏱️ Uptime: ${uptime}\n` +
           `📱 Prefix: ${config.PREFIX}\n` +
           `🔧 Mode: ${config.MODE}`
@@ -74,17 +81,71 @@ export default function infoCommands(): Command[] {
       description: 'Show bot information',
       execute: async (ctx: CommandContext) => {
         const mem = process.memoryUsage();
-        await ctx.m.reply(
-          `🤖 *${config.BOT_NAME} Info*\n\n` +
-          `📛 Name: ${config.BOT_NAME}\n` +
+        const caption =
+          `🤖 *${config.BOT_NAME}*\n\n` +
+          `📝 ${config.DESCRIPTION}\n` +
           `📦 Version: 2.0.0\n` +
           `👑 Owner: ${config.OWNER_NAME}\n` +
           `🔧 Mode: ${config.MODE}\n` +
           `📱 Prefix: ${config.PREFIX}\n` +
+          `🕐 Timezone: ${timezoneName()}\n` +
           `⚙️ Runtime: Node.js ${process.version}\n` +
           `💾 Memory: ${formatBytes(mem.heapUsed)}\n` +
           `⏰ Uptime: ${formatUptime(process.uptime())}\n` +
-          `📊 Commands: ${ctx.registry.getAll().length}`
+          `📊 Commands: ${ctx.registry.getAll().length}`;
+
+        // BOT_IMAGE / DESCRIPTION used to be config that no command ever read.
+        if (config.BOT_IMAGE) {
+          try {
+            await ctx.m.send({ image: { url: config.BOT_IMAGE }, caption });
+            return;
+          } catch {
+            // fall through to text when the image URL is unreachable
+          }
+        }
+        await ctx.m.reply(caption);
+      },
+    },
+    {
+      name: 'botstats',
+      aliases: ['bmetrics', 'usage'],
+      category: 'owner',
+      description: 'Show persisted bot metrics (commands, AI engines, throttling)',
+      example: '.botstats',
+      execute: async (ctx: CommandContext) => {
+        if (!ctx.isCreator) {
+          await ctx.m.reply('❌ Owner only command!');
+          return;
+        }
+        const snapshot = metrics.snapshot();
+
+        const topCommands = Object.entries(snapshot.commandsByName)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 8)
+          .map(([name, count]) => `• ${config.PREFIX}${name}: ${count}`)
+          .join('\n') || '• (none yet)';
+
+        const engines = Object.entries(snapshot.aiEngines)
+          .map(([engine, s]) => {
+            const avg = s.ok + s.fail > 0 ? Math.round(s.totalMs / (s.ok + s.fail)) : 0;
+            return `• ${engine}: ${s.ok} ok / ${s.fail} fail (avg ${avg}ms)`;
+          })
+          .join('\n') || '• (no AI calls yet)';
+
+        await ctx.m.reply(
+          `📊 *${config.BOT_NAME} stats*\n\n` +
+          `🕐 ${formatLocal()} (${timezoneName()})\n` +
+          `📈 Since: ${formatLocal(new Date(snapshot.since))}\n` +
+          `🔁 Booted: ${formatLocal(new Date(snapshot.startedAt))}\n\n` +
+          `📨 Messages handled: ${snapshot.messagesReceived}\n` +
+          `⌨️ Commands run: ${snapshot.commandsTotal}\n` +
+          `📥 Offline commands replayed: ${snapshot.backlogProcessed}\n` +
+          `⏳ Commands throttled: ${snapshot.cooldownsHit}\n\n` +
+          `🤖 *AI engines*\n${engines}\n\n` +
+          `🔥 *Top commands*\n${topCommands}\n\n` +
+          (snapshot.lastError
+            ? `⚠️ Last error: ${formatLocal(new Date(snapshot.lastError.at))} - ${snapshot.lastError.message}`
+            : '✅ No errors recorded')
         );
       },
     },
