@@ -26,8 +26,6 @@
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
     .user-pill{display:flex;align-items:center;gap:8px;padding:6px 12px;border-radius:20px;background:rgba(99,102,241,.12);border:1px solid rgba(99,102,241,.3);font-size:13px}
     .user-pill .role{font-size:10px;text-transform:uppercase;color:var(--accent);font-weight:700;letter-spacing:.5px}
-    .btn-logout{background:none;border:none;color:var(--dim);cursor:pointer;font-size:16px;padding:4px}
-    .btn-logout:hover{color:var(--red)}
 
     .tabs{max-width:1200px;margin:0 auto;padding:0 24px 16px;display:flex;gap:4px;border-bottom:1px solid var(--border)}
     .tab{padding:10px 18px;font-size:13px;font-weight:600;color:var(--dim);cursor:pointer;border-bottom:2px solid transparent;border-radius:6px 6px 0 0;transition:.15s;background:none;border-top:none;border-left:none;border-right:none;font-family:inherit}
@@ -84,15 +82,12 @@
 
     .empty{text-align:center;padding:32px;color:var(--dim);font-size:13px}
 
-    /* Login */
-    #loginView{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
-    .login-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:36px;width:100%;max-width:380px}
-    .login-card h2{text-align:center;font-size:22px;margin-bottom:6px}
-    .login-card .sub{text-align:center;font-size:13px;color:var(--dim);margin-bottom:28px}
-    .login-card label{display:block;font-size:12px;font-weight:600;color:var(--dim);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
-    .login-card .field{margin-bottom:16px}
-    .login-card .btn{width:100%;justify-content:center;padding:12px;font-size:14px;margin-top:8px}
-    .login-error{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:8px;padding:10px;font-size:13px;color:var(--red);margin-bottom:16px;display:none}
+    @media(max-width:600px){
+      .grid{grid-template-columns:1fr 1fr}
+      .tabs{overflow-x:auto}
+      table{font-size:11px}
+      th,td{padding:6px 8px}
+    }
 
     .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:100}
     .modal-overlay.show{display:flex}
@@ -100,36 +95,11 @@
     .modal h3{font-size:16px;margin-bottom:18px}
     .modal .btn{margin-top:12px}
     .modal .form-row{flex-direction:column}
-
-    @media(max-width:600px){
-      .grid{grid-template-columns:1fr 1fr}
-      .tabs{overflow-x:auto}
-      table{font-size:11px}
-      th,td{padding:6px 8px}
-    }
   </style>
 </head>
 <body>
 
-<div id="loginView">
-  <div class="login-card">
-    <h2>🤖 Mtaula 01</h2>
-    <p class="sub">Admin Dashboard Login</p>
-    <div class="login-error" id="loginError"></div>
-    <div class="field">
-      <label>Username</label>
-      <input id="loginUser" type="text" placeholder="Enter username" autocomplete="username">
-    </div>
-    <div class="field">
-      <label>Password</label>
-      <input id="loginPass" type="password" placeholder="Enter password" autocomplete="current-password">
-    </div>
-    <button class="btn btn-primary" onclick="login()">Sign In</button>
-    <p style="text-align:center;font-size:12px;color:var(--dim);margin-top:16px">Default: username <code>admin</code>, password = ADMIN_TOKEN</p>
-  </div>
-</div>
-
-<div id="dashboardView" style="display:none">
+<div id="dashboardView">
   <div class="header">
     <div class="header-left">
       <div class="logo">🤖</div>
@@ -137,7 +107,6 @@
     </div>
     <div class="header-right">
       <div class="badge on" id="connBadge"><span class="dot" style="background:var(--green)"></span><span id="connText">Online</span></div>
-      <div class="user-pill"><span id="userName"></span><span class="role" id="userRole"></span><button class="btn-logout" onclick="logout()" title="Logout">⏻</button></div>
     </div>
   </div>
 
@@ -288,7 +257,6 @@
 </div>
 
 <script>
-let TOKEN = localStorage.getItem('mtaula_token') || '';
 let ME = null;
 
 const ALL_CMDS = [
@@ -319,8 +287,7 @@ function filterCmds(){ renderCmds(document.getElementById('cmdSearch').value); }
 function fmtUptime(s){const d=Math.floor(s/86400);const h=Math.floor((s%86400)/3600);const m=Math.floor((s%3600)/60);const sec=Math.floor(s%60);const p=[];if(d)p.push(d+'d');if(h)p.push(h+'h');if(m)p.push(m+'m');p.push(sec+'s');return p.join(' ')}
 
 function api(path, opts={}) {
-  return fetch(path, { ...opts, headers: { 'Content-Type':'application/json', 'Authorization':`Bearer ${TOKEN}`, ...(opts.headers||{}) } }).then(async r => {
-    if (r.status === 401) { logout(); throw new Error('Unauthorized'); }
+  return fetch(path, { ...opts, headers: { 'Content-Type':'application/json', ...(opts.headers||{}) } }).then(async r => {
     return r.json();
   });
 }
@@ -333,46 +300,14 @@ function showToast(msg, ok=true) {
   setTimeout(() => el.remove(), 3000);
 }
 
-async function login() {
-  const u = document.getElementById('loginUser').value.trim();
-  const p = document.getElementById('loginPass').value;
-  const errEl = document.getElementById('loginError');
-  errEl.style.display = 'none';
-  if (!u || !p) { errEl.textContent = 'Please fill all fields'; errEl.style.display = 'block'; return; }
-  try {
-    const res = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: u, password: p }),
-    }).then(r => r.json());
-    if (!res.success) { errEl.textContent = res.error || 'Login failed'; errEl.style.display = 'block'; return; }
-    TOKEN = res.token;
-    localStorage.setItem('mtaula_token', TOKEN);
-    ME = res.user;
-    showDashboard();
-  } catch (e) {
-    errEl.textContent = 'Connection error'; errEl.style.display = 'block';
-  }
-}
-
-function logout() {
-  TOKEN = '';
-  ME = null;
-  localStorage.removeItem('mtaula_token');
-  document.getElementById('loginView').style.display = 'flex';
-  document.getElementById('dashboardView').style.display = 'none';
-}
-
 async function showDashboard() {
   try {
     const me = await api('/api/auth/me');
     ME = me.user;
-    document.getElementById('userName').textContent = ME.username;
-    document.getElementById('userRole').textContent = ME.role;
-    document.getElementById('loginView').style.display = 'none';
-    document.getElementById('dashboardView').style.display = 'block';
-    refreshAll();
-  } catch { logout(); }
+  } catch {}
+  document.getElementById('loginView')?.remove();
+  document.getElementById('dashboardView').style.display = 'block';
+  refreshAll();
 }
 
 async function refreshAll() {
@@ -415,7 +350,7 @@ async function loadUsers() {
   try {
     const res = await api('/api/users');
     const tbody = document.getElementById('usersTable');
-    if (!res.users?.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">No users</td></tr>'; return; }
+    if (!res.users?.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">No users — click + Add User</td></tr>'; return; }
     tbody.innerHTML = res.users.map(u => `<tr>
       <td style="font-weight:600">${esc(u.username)}</td>
       <td><span class="pill ${u.role}">${u.role}</span></td>
@@ -529,11 +464,9 @@ document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () =>
   if (t.dataset.tab==='engines') loadEngines();
 }));
 
-document.getElementById('loginPass')?.addEventListener('keydown', e => { if(e.key==='Enter') login(); });
-
 renderCmds();
-if (TOKEN) showDashboard(); else document.getElementById('loginView').style.display = 'flex';
-setInterval(() => { if (TOKEN && document.getElementById('dashboardView').style.display !== 'none') refreshAll(); }, 15000);
+showDashboard();
+setInterval(refreshAll, 15000);
 </script>
 </body>
 </html>

