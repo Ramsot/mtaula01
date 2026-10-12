@@ -76,11 +76,25 @@ export function createWebServer(bot: BotClient): express.Application {
     }
     try {
       const image = await bot.getQrImage();
+      if (!image) {
+        res.status(404).json({ success: false, error: 'QR image generation failed' });
+        return;
+      }
+      const base64 = image.includes(',') ? image.split(',')[1] : image;
       res.setHeader('Content-Type', 'image/png');
-      res.send(Buffer.from(image!.split(',')[1], 'base64'));
-    } catch {
-      res.status(500).json({ success: false, error: 'Failed to generate QR image' });
+      res.send(Buffer.from(base64, 'base64'));
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: 'Failed to generate QR image: ' + e?.message });
     }
+  });
+
+  app.get('/api/qr/raw', (_req, res) => {
+    const qr = bot.getQr();
+    if (!qr) {
+      res.status(404).json({ success: false, error: 'No QR available' });
+      return;
+    }
+    res.json({ success: true, qr });
   });
 
   app.post('/api/reset', requireAdmin, async (_req, res) => {

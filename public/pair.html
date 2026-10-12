@@ -3,393 +3,234 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Mtaula 01 - Device Registration</title>
+  <title>Mtaula 01 — Pair Device</title>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
-    }
-    .container {
-      background: white;
-      border-radius: 16px;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-      padding: 40px;
-      width: 100%;
-      max-width: 420px;
-    }
-    .logo {
-      text-align: center;
-      margin-bottom: 30px;
-    }
-    .logo h1 {
-      color: #667eea;
-      font-size: 28px;
-      font-weight: 700;
-    }
-    .logo p {
-      color: #666;
-      margin-top: 8px;
-    }
-    .status {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      margin-bottom: 24px;
-      padding: 12px;
-      border-radius: 8px;
-      font-size: 14px;
-    }
-    .status.ready { background: #f0fdf4; color: #166534; }
-    .status.connecting { background: #fef3c7; color: #92400e; }
-    .status.disconnected { background: #fef2f2; color: #991b1b; }
-    .status-dot { width: 10px; height: 10px; border-radius: 50%; }
-    .status.ready .status-dot { background: #22c55e; }
-    .status.connecting .status-dot { background: #f59e0b; }
-    .status.disconnected .status-dot { background: #ef4444; }
-
-    .qr-section {
-      text-align: center;
-      margin-bottom: 24px;
-    }
-    .qr-code-img {
-      max-width: 100%;
-      border-radius: 12px;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.1);
-      background: white;
-      padding: 16px;
-    }
-    .qr-loading { padding: 40px; color: #666; }
-    .qr-error { padding: 20px; background: #fef2f2; border: 1px solid #fca5a5; border-radius: 10px; color: #991b1b; }
-    .qr-success { padding: 20px; background: #f0fdf4; border: 1px solid #86efac; border-radius: 10px; color: #166534; }
-    .qr-instructions {
-      font-size: 14px;
-      color: #666;
-      line-height: 1.6;
-      margin-top: 16px;
-    }
-    .qr-instructions ol { margin-left: 20px; text-align: left; }
-    .qr-instructions li { margin-bottom: 8px; }
-    .refresh-qr {
-      margin-top: 16px;
-      padding: 10px 20px;
-      background: #667eea;
-      color: white;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-      font-weight: 500;
-    }
-    .refresh-qr:hover:not(:disabled) { background: #5568d3; }
-    .refresh-qr:disabled { opacity: 0.6; cursor: not-allowed; }
-
-    .or-divider {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin: 24px 0;
-      color: #999;
-      font-size: 13px;
-    }
-    .or-divider::before,
-    .or-divider::after {
-      content: '';
-      flex: 1;
-      height: 1px;
-      background: #e5e7eb;
-    }
-
-    .form-group { margin-bottom: 20px; }
-    label { display: block; margin-bottom: 8px; font-weight: 500; color: #333; }
-    input[type="tel"] {
-      width: 100%; padding: 14px 16px; border: 2px solid #e1e5e9; border-radius: 10px;
-      font-size: 16px; transition: border-color 0.2s, box-shadow 0.2s;
-    }
-    input[type="tel"]:focus { outline: none; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15); }
-    .btn {
-      width: 100%; padding: 14px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white; border: none; border-radius: 10px; font-size: 16px; font-weight: 600;
-      cursor: pointer; transition: transform 0.1s, box-shadow 0.2s;
-    }
-    .btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4); }
-    .btn:active:not(:disabled) { transform: translateY(0); }
-    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
-
-    .result { margin-top: 24px; padding: 20px; border-radius: 10px; display: none; }
-    .result.success { display: block; background: #f0fdf4; border: 1px solid #86efac; }
-    .result.error { display: block; background: #fef2f2; border: 1px solid #fca5a5; }
-    .result h3 { margin-bottom: 12px; font-size: 18px; }
-    .result.success h3 { color: #166534; }
-    .result.error h3 { color: #991b1b; }
-    .code {
-      font-family: 'Monaco', 'Menlo', monospace; font-size: 32px; font-weight: 700;
-      letter-spacing: 4px; text-align: center; padding: 16px; background: white;
-      border-radius: 8px; color: #667eea; margin: 16px 0; word-break: break-all;
-    }
-    .instructions { font-size: 14px; color: #666; line-height: 1.6; }
-    .instructions ol { margin-left: 20px; }
-    .instructions li { margin-bottom: 8px; }
-
-    .loading { display: none; text-align: center; padding: 20px; }
-    .loading.show { display: block; }
-    .spinner {
-      width: 40px; height: 40px; border: 3px solid #e1e5e9; border-top-color: #667eea;
-      border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 16px;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-
-    .footer { text-align: center; margin-top: 30px; color: #999; font-size: 13px; }
-    .footer a { color: #667eea; text-decoration: none; }
-    .footer a:hover { text-decoration: underline; }
+    *{box-sizing:border-box;margin:0;padding:0}
+    :root{--bg:#0a0e1a;--card:#111827;--border:#1e293b;--text:#e2e8f0;--dim:#94a3b8;--accent:#6366f1;--green:#22c55e;--red:#ef4444;--yellow:#eab308}
+    body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+    .container{width:100%;max-width:480px}
+    .header{text-align:center;margin-bottom:28px}
+    .logo{width:56px;height:56px;border-radius:16px;background:linear-gradient(135deg,var(--accent),#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:26px;margin:0 auto 14px;box-shadow:0 0 30px rgba(99,102,241,.3)}
+    h1{font-size:24px;font-weight:800}
+    .sub{font-size:13px;color:var(--dim);margin-top:4px}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:28px;margin-bottom:16px}
+    .status{display:flex;align-items:center;justify-content:center;gap:8px;padding:12px;border-radius:10px;font-size:14px;font-weight:600;margin-bottom:20px}
+    .status.ready{background:rgba(34,197,94,.1);color:var(--green);border:1px solid rgba(34,197,94,.3)}
+    .status.waiting{background:rgba(234,179,8,.1);color:var(--yellow);border:1px solid rgba(234,179,8,.3)}
+    .status.error{background:rgba(239,68,68,.1);color:var(--red);border:1px solid rgba(239,68,68,.3)}
+    .dot{width:8px;height:8px;border-radius:50%;animation:pulse 2s ease-in-out infinite}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+    h2{font-size:15px;font-weight:600;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+    .qr-wrap{text-align:center}
+    .qr-img{max-width:260px;width:100%;border-radius:12px;background:#fff;padding:12px;margin-bottom:12px}
+    .qr-loading{color:var(--dim);font-size:13px;padding:40px 0}
+    .qr-error{color:var(--red);font-size:13px;padding:20px 0}
+    .qr-hint{font-size:12px;color:var(--dim);line-height:1.5;margin-bottom:16px}
+    .divider{display:flex;align-items:center;gap:12px;margin:20px 0;color:var(--dim);font-size:12px}
+    .divider::before,.divider::after{content:'';flex:1;height:1px;background:var(--border)}
+    label{display:block;font-size:12px;font-weight:600;color:var(--dim);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
+    input[type="tel"]{width:100%;padding:12px 16px;border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.04);color:var(--text);font-size:16px;outline:none;transition:border-color .15s;font-family:inherit}
+    input[type="tel"]:focus{border-color:var(--accent)}
+    input::placeholder{color:var(--dim)}
+    .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:12px;border-radius:10px;border:none;font-size:14px;font-weight:600;cursor:pointer;transition:.15s;margin-top:12px;font-family:inherit}
+    .btn:hover{opacity:.85}
+    .btn:active{transform:scale(.98)}
+    .btn:disabled{opacity:.5;cursor:not-allowed}
+    .btn-primary{background:var(--accent);color:#fff}
+    .btn-ghost{background:rgba(255,255,255,.06);color:var(--text);border:1px solid var(--border)}
+    .result{margin-top:16px;padding:16px;border-radius:10px;display:none}
+    .result.show{display:block}
+    .result.success{background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.3)}
+    .result.error{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3)}
+    .result h3{font-size:14px;margin-bottom:8px}
+    .result.success h3{color:var(--green)}
+    .result.error h3{color:var(--red)}
+    .code{font-family:'SF Mono','Fira Code',monospace;font-size:28px;font-weight:700;letter-spacing:6px;text-align:center;padding:14px;background:rgba(255,255,255,.05);border-radius:8px;color:var(--accent);margin:10px 0}
+    .instructions{font-size:12px;color:var(--dim);line-height:1.6}
+    .instructions ol{padding-left:18px;margin-top:6px}
+    .instructions li{margin-bottom:4px}
+    .spinner{width:20px;height:20px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;display:inline-block}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    footer{text-align:center;font-size:12px;color:var(--dim);margin-top:20px}
+    footer a{color:var(--accent);text-decoration:none}
+    @media(max-width:500px){.code{font-size:22px;letter-spacing:4px}}
   </style>
 </head>
 <body>
   <div class="container">
-    <div class="logo">
-      <h1>Mtaula 01</h1>
-      <p>WhatsApp Bot Device Registration</p>
+    <div class="header">
+      <div class="logo">🤖</div>
+      <h1>Pair Device</h1>
+      <p class="sub">Connect Mtaula 01 to WhatsApp</p>
     </div>
 
-    <div id="status" class="status disconnected">
-      <span class="status-dot"></span>
-      <span id="statusText">Checking bot status...</span>
-    </div>
-
-    <div class="qr-section">
-      <div id="qrLoading" class="qr-loading">
-        <div class="spinner" style="margin: 0 auto 16px;"></div>
-        <p>Loading QR code...</p>
+    <div class="card">
+      <div class="status waiting" id="statusBar">
+        <span class="dot" style="background:currentColor"></span>
+        <span id="statusText">Checking status…</span>
       </div>
-      <div id="qrError" class="qr-error" style="display: none;"></div>
-      <div id="qrSuccess" class="qr-success" style="display: none;"></div>
-      <img id="qrImage" class="qr-code-img" style="display: none;" alt="WhatsApp QR Code">
-      <div id="qrInstructions" class="qr-instructions" style="display: none;">
-        <p><strong>How to link:</strong></p>
-        <ol>
-          <li>Open WhatsApp on your phone</li>
-          <li>Go to <strong>Settings</strong> → <strong>Linked Devices</strong></li>
-          <li>Tap <strong>Link a Device</strong></li>
-          <li>Point camera at the QR code above</li>
-          <li>Wait for connection confirmation</li>
-        </ol>
-        <p style="margin-top: 12px; color: #f59e0b; font-weight: 500;">
-          QR code auto-refreshes. If expired, click "Refresh QR".
+
+      <div id="connectedMsg" style="display:none;text-align:center;padding:20px">
+        <div style="font-size:40px;margin-bottom:10px">✅</div>
+        <h2 style="justify-content:center;margin-bottom:6px">Already Connected!</h2>
+        <p style="color:var(--dim);font-size:13px">Bot is linked to WhatsApp. No pairing needed.</p>
+        <a class="btn btn-ghost" href="/" style="margin-top:16px">← Back to Dashboard</a>
+      </div>
+
+      <div id="pairSection">
+        <h2>📸 Method 1: QR Code</h2>
+        <div class="qr-wrap">
+          <div class="qr-loading" id="qrLoading"><span class="spinner"></span><br>Loading QR code…</div>
+          <img class="qr-img" id="qrImg" style="display:none" alt="QR Code">
+          <div class="qr-error" id="qrError" style="display:none"></div>
+        </div>
+        <p class="qr-hint">
+          Open WhatsApp on your phone → <strong>Settings</strong> → <strong>Linked Devices</strong> → <strong>Link a Device</strong> → Scan the QR code above
         </p>
+
+        <div class="divider">OR</div>
+
+        <h2>🔢 Method 2: Pairing Code</h2>
+        <label>Your WhatsApp Number</label>
+        <input type="tel" id="phoneInput" placeholder="e.g. 255741267303" maxlength="15">
+        <button class="btn btn-primary" id="pairBtn" onclick="generateCode()">
+          🔑 Generate Pairing Code
+        </button>
+
+        <div class="result" id="pairResult">
+          <h3 id="pairResultTitle"></h3>
+          <div class="code" id="pairCode"></div>
+          <div class="instructions" id="pairInstructions">
+            <strong>Enter this code on your phone:</strong>
+            <ol>
+              <li>Open WhatsApp on your phone</li>
+              <li>Go to <strong>Settings</strong> → <strong>Linked Devices</strong></li>
+              <li>Tap <strong>Link a Device</strong></li>
+              <li>Tap <strong>Link with phone number instead</strong></li>
+              <li>Enter the code above</li>
+            </ol>
+          </div>
+        </div>
+
+        <div class="result" id="errorResult">
+          <h3>❌ Error</h3>
+          <p id="errorMsg" style="font-size:13px"></p>
+        </div>
       </div>
-      <button id="refreshQr" class="refresh-qr" style="display: none;">🔄 Refresh QR Code</button>
     </div>
 
-    <div class="or-divider">OR</div>
-
-    <form id="pairForm" class="form-group" style="display: none;">
-      <label for="phoneNumber">Phone Number (for pairing code)</label>
-      <input 
-        type="tel" 
-        id="phoneNumber" 
-        name="phoneNumber" 
-        placeholder="2547XXXXXXXX"
-        autocomplete="tel"
-        inputmode="tel"
-      >
-      <button type="submit" class="btn" id="submitBtn">Get Pairing Code</button>
-    </form>
-
-    <div id="loading" class="loading" style="display: none;">
-      <div class="spinner"></div>
-      <p>Generating pairing code...</p>
-    </div>
-
-    <div id="pairResult" class="result"></div>
-
-    <div class="footer">
-      <p>Mtaula 01 WhatsApp Bot &copy; 2025</p>
-      <p>
-        <a href="/health" target="_blank">Health</a> | 
-        <a href="/api/status" target="_blank">Status</a> | 
-        <button id="resetBtn" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:13px;text-decoration:underline;">Reset Session</button>
-      </p>
-    </div>
+    <footer>
+      <a href="/">← Dashboard</a> · <a href="/health-web">Health</a>
+    </footer>
   </div>
 
-  <script>
-    const qrLoading = document.getElementById('qrLoading');
-    const qrError = document.getElementById('qrError');
-    const qrSuccess = document.getElementById('qrSuccess');
-    const qrImage = document.getElementById('qrImage');
-    const qrInstructions = document.getElementById('qrInstructions');
-    const refreshQrBtn = document.getElementById('refreshQr');
-    const pairForm = document.getElementById('pairForm');
-    const phoneInput = document.getElementById('phoneNumber');
-    const submitBtn = document.getElementById('submitBtn');
-    const loading = document.getElementById('loading');
-    const pairResult = document.getElementById('pairResult');
-    const statusEl = document.getElementById('status');
-    const statusText = document.getElementById('statusText');
+<script>
+const statusBar = document.getElementById('statusBar');
+const statusText = document.getElementById('statusText');
+const connectedMsg = document.getElementById('connectedMsg');
+const pairSection = document.getElementById('pairSection');
+const qrLoading = document.getElementById('qrLoading');
+const qrImg = document.getElementById('qrImg');
+const qrError = document.getElementById('qrError');
+const pairResult = document.getElementById('pairResult');
+const errorResult = document.getElementById('errorResult');
 
-    let qrPollInterval = null;
+async function checkStatus() {
+  try {
+    const res = await fetch('/api/status');
+    const d = await res.json();
 
-    const STATUS_LABELS = {
-      waiting_for_pairing: 'Bot ready - scan QR or enter phone number for pairing code',
-      connecting: 'Bot is starting up - WhatsApp not connected yet...'
-    };
-
-    async function checkStatus() {
-      try {
-        const res = await fetch('/api/status');
-        const data = await res.json();
-        
-        if (data.state === 'connecting') {
-          statusEl.className = 'status connecting';
-        } else if (data.state === 'waiting_for_pairing' || data.connected) {
-          statusEl.className = 'status ready';
-        } else {
-          statusEl.className = 'status disconnected';
-        }
-        
-        statusText.textContent = data.connected 
-          ? `Bot connected as ${data.user?.split('@')[0] || 'Unknown'}`
-          : (STATUS_LABELS[data.state] || 'Bot not connected');
-        
-        // Show pairing form only when QR not available (bot connected or no QR)
-        if (data.state === 'waiting_for_pairing') {
-          pairForm.style.display = 'block';
-        }
-      } catch (e) {
-        statusEl.className = 'status disconnected';
-        statusText.textContent = 'Unable to check bot status';
-      }
+    if (d.connected || d.registered) {
+      statusBar.className = 'status ready';
+      statusText.textContent = d.connected ? 'Connected to WhatsApp' : 'Registered — reconnecting…';
+      connectedMsg.style.display = 'block';
+      pairSection.style.display = 'none';
+      return;
     }
 
-    async function loadQrCode() {
-      try {
-        const res = await fetch('/api/qr?format=image');
-        if (res.ok) {
-          qrLoading.style.display = 'none';
-          qrError.style.display = 'none';
-          qrSuccess.style.display = 'none';
-          qrImage.src = URL.createObjectURL(await res.blob());
-          qrImage.style.display = 'block';
-          qrInstructions.style.display = 'block';
-          refreshQrBtn.style.display = 'block';
-          pairForm.style.display = 'block'; // Show both methods
-        } else if (res.status === 404) {
-          qrLoading.style.display = 'none';
-          qrError.style.display = 'none';
-          qrSuccess.style.display = 'block';
-          qrSuccess.innerHTML = '<strong>✅ Bot is already connected!</strong> No QR code needed.';
-          refreshQrBtn.style.display = 'none';
-          qrImage.style.display = 'none';
-          qrInstructions.style.display = 'none';
-        } else {
-          throw new Error('Failed to load QR');
-        }
-      } catch (e) {
-        qrLoading.style.display = 'none';
-        qrError.style.display = 'block';
-        qrError.textContent = 'Failed to load QR code. Bot may still be starting...';
-        refreshQrBtn.style.display = 'block';
-        qrImage.style.display = 'none';
-        qrInstructions.style.display = 'none';
-      }
+    statusBar.className = 'status waiting';
+    statusText.textContent = 'Waiting for pairing…';
+    connectedMsg.style.display = 'none';
+    pairSection.style.display = 'block';
+  } catch {
+    statusBar.className = 'status error';
+    statusText.textContent = 'Cannot reach server';
+  }
+}
+
+async function loadQR() {
+  qrLoading.style.display = 'block';
+  qrImg.style.display = 'none';
+  qrError.style.display = 'none';
+
+  try {
+    const res = await fetch('/api/qr');
+    if (res.ok) {
+      const blob = await res.blob();
+      qrImg.src = URL.createObjectURL(blob);
+      qrImg.style.display = 'block';
+      qrLoading.style.display = 'none';
+    } else {
+      qrError.textContent = 'QR not available yet. Use pairing code below.';
+      qrError.style.display = 'block';
+      qrLoading.style.display = 'none';
     }
+  } catch (e) {
+    qrError.textContent = 'Failed to load QR: ' + e.message;
+    qrError.style.display = 'block';
+    qrLoading.style.display = 'none';
+  }
+}
 
-    function startQrPolling() {
-      if (qrPollInterval) clearInterval(qrPollInterval);
-      qrPollInterval = setInterval(() => { loadQrCode(); }, 15000);
+async function generateCode() {
+  const phone = document.getElementById('phoneInput').value.replace(/\D/g, '');
+  const btn = document.getElementById('pairBtn');
+  const pairRes = document.getElementById('pairResult');
+  const errRes = document.getElementById('errorResult');
+
+  pairRes.classList.remove('show');
+  errRes.classList.remove('show');
+
+  if (phone.length < 10 || phone.length > 15) {
+    errRes.classList.add('show');
+    document.getElementById('errorMsg').textContent = 'Enter a valid number (10-15 digits, no +)';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Generating…';
+
+  try {
+    const res = await fetch('/api/pair', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phoneNumber: phone }),
+    });
+    const d = await res.json();
+
+    if (d.success && d.pairingCode) {
+      document.getElementById('pairCode').textContent = d.pairingCode;
+      pairRes.classList.add('show');
+    } else {
+      errRes.classList.add('show');
+      document.getElementById('errorMsg').textContent = d.error || 'Failed to generate code';
     }
+  } catch (e) {
+    errRes.classList.add('show');
+    document.getElementById('errorMsg').textContent = 'Server error: ' + e.message;
+  }
 
-    refreshQrBtn.addEventListener('click', () => {
-      qrLoading.style.display = 'block';
-      qrError.style.display = 'none';
-      qrSuccess.style.display = 'none';
-      qrImage.style.display = 'none';
-      qrInstructions.style.display = 'none';
-      refreshQrBtn.style.display = 'none';
-      loadQrCode();
-    });
+  btn.disabled = false;
+  btn.innerHTML = '🔑 Generate Pairing Code';
+}
 
-    pairForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const phoneNumber = phoneInput.value.trim();
-      if (!phoneNumber) return;
+document.getElementById('phoneInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') generateCode();
+});
 
-      submitBtn.disabled = true;
-      loading.style.display = 'block';
-      pairResult.style.display = 'none';
-      pairResult.className = 'result';
-
-      try {
-        let data = null;
-        for (let attempt = 1; attempt <= 4; attempt++) {
-          const res = await fetch('/api/pair', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ phoneNumber })
-          });
-          data = await res.json();
-          if (!data.retryable || attempt === 4) break;
-          statusText.textContent = `Bot is still starting up - retrying (${attempt}/4)...`;
-          await new Promise((resolve) => setTimeout(resolve, 5000));
-        }
-
-        if (data.success) {
-          pairResult.className = 'result success';
-          pairResult.innerHTML = `
-            <h3>✅ Pairing Code Generated</h3>
-            <div class="code">${data.pairingCode}</div>
-            <div class="instructions">
-              <p><strong>How to link:</strong></p>
-              <ol>
-                <li>Open WhatsApp on your phone</li>
-                <li>Go to <strong>Settings</strong> → <strong>Linked Devices</strong></li>
-                <li>Tap <strong>Link with Phone Number</strong></li>
-                <li>Enter the code above: <strong>${data.pairingCode}</strong></li>
-                <li>Wait for connection confirmation</li>
-              </ol>
-              <p style="margin-top: 12px; color: #667eea; font-weight: 500;">
-                Code expires in ~10 minutes. Do not share with anyone.
-              </p>
-            </div>
-          `;
-        } else {
-          pairResult.className = 'result error';
-          pairResult.innerHTML = `<h3>❌ Error</h3><p>${data.error || 'Failed to generate pairing code'}</p>`;
-        }
-        pairResult.style.display = 'block';
-      } catch (error) {
-        pairResult.className = 'result error';
-        pairResult.innerHTML = `<h3>❌ Error</h3><p>Network error. Please try again.</p>`;
-        pairResult.style.display = 'block';
-      } finally {
-        submitBtn.disabled = false;
-        loading.style.display = 'none';
-        checkStatus();
-      }
-    });
-
-    phoneInput.addEventListener('input', (e) => { e.target.value = e.target.value.replace(/\D/g, ''); });
-
-    document.getElementById('resetBtn').addEventListener('click', async () => {
-      if (!confirm('Clear the WhatsApp session and re-pair? You will need to scan QR again.')) return;
-      try {
-        await fetch('/api/reset', { method: 'POST' });
-        alert('Session cleared. Refreshing...');
-        setTimeout(() => location.reload(), 2000);
-      } catch (e) {
-        alert('Reset failed. Try again.');
-      }
-    });
-
-    checkStatus();
-    loadQrCode();
-    startQrPolling();
-    setInterval(checkStatus, 10000);
-  </script>
+checkStatus();
+loadQR();
+setInterval(checkStatus, 5000);
+</script>
 </body>
 </html>

@@ -174,8 +174,11 @@ export class BotClient extends EventEmitter {
 
           if (shouldReconnect) {
             this.reconnectAttempts++;
-            const delay = Math.min(5000 * 2 ** Math.min(this.reconnectAttempts, 4), 60000);
-            logger.info({ attempt: this.reconnectAttempts, delayMs: delay }, 'Reconnecting');
+            const hasQr = !!this.currentQr;
+            const delay = hasQr
+              ? Math.min(8000 * this.reconnectAttempts, 30000)
+              : Math.min(5000 * 2 ** Math.min(this.reconnectAttempts, 4), 60000);
+            logger.info({ attempt: this.reconnectAttempts, delayMs: delay, hasQr }, 'Reconnecting');
             setTimeout(() => {
               this.isConnecting = false;
               this.connect().catch(() => {});
