@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mtaula 01 — Health</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#0a0e1a;--card:#111827;--card2:#1a2236;--border:#1e293b;
+      --text:#e2e8f0;--dim:#94a3b8;--accent:#6366f1;
+      --green:#22c55e;--red:#ef4444;--yellow:#eab308;--blue:#3b82f6;--purple:#8b5cf6;
+    }
+    body{
+      font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','Segoe UI',sans-serif;
+      background:var(--bg);color:var(--text);min-height:100vh;
+      display:flex;flex-direction:column;align-items:center;
+      padding:40px 20px;
+    }
+    ::-webkit-scrollbar{width:6px}
+    ::-webkit-scrollbar-thumb{background:#334155;border-radius:3px}
+
+    .header{
+      text-align:center;margin-bottom:40px;
+      display:flex;flex-direction:column;align-items:center;gap:14px;
+    }
+    .logo{
+      width:64px;height:64px;border-radius:18px;
+      background:linear-gradient(135deg,var(--accent),var(--purple));
+      display:flex;align-items:center;justify-content:center;
+      font-size:30px;box-shadow:0 0 40px rgba(99,102,241,.3);
+    }
+    h1{font-size:28px;font-weight:800;letter-spacing:-.5px}
+    .sub{font-size:14px;color:var(--dim)}
+    .version{font-size:12px;color:var(--dim);opacity:.6;margin-top:2px}
+
+    .status-banner{
+      display:flex;align-items:center;gap:10px;
+      padding:14px 28px;border-radius:14px;
+      font-size:16px;font-weight:700;
+      margin-bottom:32px;
+      transition:.3s;
+    }
+    .status-banner.online{background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.3);color:var(--green)}
+    .status-banner.offline{background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.3);color:var(--red)}
+    .status-banner.warn{background:rgba(234,179,8,.12);border:1px solid rgba(234,179,8,.3);color:var(--yellow)}
+    .pulse{width:12px;height:12px;border-radius:50%;animation:pulse 2s ease-in-out infinite}
+    @keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 currentColor}50%{opacity:.6;box-shadow:0 0 0 8px transparent}}
+
+    .grid{
+      display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
+      gap:16px;width:100%;max-width:900px;margin-bottom:24px;
+    }
+    .card{
+      background:var(--card);border:1px solid var(--border);
+      border-radius:16px;padding:24px;text-align:center;
+      transition:.2s;
+    }
+    .card:hover{border-color:rgba(99,102,241,.3);transform:translateY(-2px)}
+    .card-icon{
+      width:44px;height:44px;border-radius:12px;
+      display:flex;align-items:center;justify-content:center;
+      font-size:20px;margin:0 auto 14px;
+    }
+    .card-label{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin-bottom:8px;font-weight:600}
+    .card-value{font-size:26px;font-weight:800;line-height:1.1}
+    .card-sub{font-size:12px;color:var(--dim);margin-top:6px}
+
+    .panel{
+      background:var(--card);border:1px solid var(--border);
+      border-radius:16px;padding:24px;width:100%;max-width:900px;
+      margin-bottom:16px;
+    }
+    .panel h2{font-size:15px;font-weight:600;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+
+    .engine{
+      display:flex;align-items:center;justify-content:space-between;
+      padding:12px 16px;background:rgba(255,255,255,.02);
+      border:1px solid var(--border);border-radius:10px;
+      margin-bottom:8px;transition:.15s;
+    }
+    .engine:hover{background:rgba(255,255,255,.04)}
+    .engine-name{font-weight:600;font-size:14px}
+    .engine-status{font-size:13px;display:flex;align-items:center;gap:8px}
+    .engine-dot{width:10px;height:10px;border-radius:50%}
+
+    .checks{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
+    .check{
+      display:flex;align-items:center;gap:10px;
+      padding:12px 14px;background:rgba(255,255,255,.02);
+      border:1px solid var(--border);border-radius:10px;
+      font-size:13px;font-weight:500;
+    }
+    .check-icon{width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0}
+    .check-ok{background:rgba(34,197,94,.15);color:var(--green)}
+    .check-warn{background:rgba(234,179,8,.15);color:var(--yellow)}
+    .check-err{background:rgba(239,68,68,.15);color:var(--red)}
+
+    .info-row{
+      display:flex;justify-content:space-between;align-items:center;
+      padding:10px 0;border-bottom:1px solid var(--border);
+      font-size:13px;
+    }
+    .info-row:last-child{border-bottom:none}
+    .info-key{color:var(--dim);font-weight:500}
+    .info-val{font-weight:600;font-family:'SF Mono','Fira Code',monospace;font-size:12px}
+
+    .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
+    .btn{
+      display:inline-flex;align-items:center;gap:8px;
+      padding:10px 20px;border-radius:10px;border:none;
+      font-size:13px;font-weight:600;cursor:pointer;
+      transition:.15s;text-decoration:none;
+    }
+    .btn:hover{opacity:.85}
+    .btn:active{transform:scale(.98)}
+    .btn-primary{background:var(--accent);color:#fff}
+    .btn-ghost{background:rgba(255,255,255,.06);color:var(--text);border:1px solid var(--border)}
+    .btn-green{background:var(--green);color:#fff}
+
+    .raw-json{
+      background:#000;border:1px solid var(--border);border-radius:10px;
+      padding:16px;font-family:'SF Mono','Fira Code',monospace;
+      font-size:12px;color:#22c55e;overflow-x:auto;
+      max-height:200px;overflow-y:auto;white-space:pre-wrap;
+    }
+
+    footer{
+      margin-top:32px;text-align:center;
+      font-size:12px;color:var(--dim);opacity:.5;
+    }
+    footer a{color:var(--accent);text-decoration:none}
+
+    .refresh-info{
+      text-align:center;font-size:12px;color:var(--dim);
+      margin-top:12px;opacity:.6;
+    }
+
+    @media(max-width:600px){
+      .grid{grid-template-columns:1fr 1fr}
+      .card-value{font-size:20px}
+      h1{font-size:22px}
+      .status-banner{font-size:14px;padding:12px 20px}
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo">🤖</div>
+    <div>
+      <h1>Mtaula 01</h1>
+      <p class="sub">WhatsApp Bot — Health Check</p>
+      <p class="version">v2.0.0</p>
+    </div>
+  </div>
+
+  <div class="status-banner warn" id="statusBanner">
+    <span class="pulse" style="background:currentColor"></span>
+    <span id="statusText">Checking…</span>
+  </div>
+
+  <div class="grid" id="statsGrid">
+    <div class="card">
+      <div class="card-icon" style="background:rgba(139,92,246,.12)">⚡</div>
+      <div class="card-label">Status</div>
+      <div class="card-value" id="cStatus">—</div>
+      <div class="card-sub" id="cStatusSub">Loading…</div>
+    </div>
+    <div class="card">
+      <div class="card-icon" style="background:rgba(59,130,246,.12)">⏱️</div>
+      <div class="card-label">Uptime</div>
+      <div class="card-value" id="cUptime">—</div>
+      <div class="card-sub" id="cRestart">—</div>
+    </div>
+    <div class="card">
+      <div class="card-icon" style="background:rgba(34,197,94,.12)">📞</div>
+      <div class="card-label">Bot Number</div>
+      <div class="card-value" id="cJid">—</div>
+      <div class="card-sub" id="cJidSub">—</div>
+    </div>
+    <div class="card">
+      <div class="card-icon" style="background:rgba(234,179,8,.12)">🐛</div>
+      <div class="card-label">Commands</div>
+      <div class="card-value" id="cCmds">85</div>
+      <div class="card-sub">loaded modules</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>✅ Health Checks</h2>
+    <div class="checks" id="checks">
+      <div class="check"><span class="check-icon check-warn">…</span> Loading checks</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>🤖 AI Engines</h2>
+    <div id="engines"><div class="engine"><span class="engine-name">Loading…</span></div></div>
+  </div>
+
+  <div class="panel">
+    <h2>📋 Server Info</h2>
+    <div id="serverInfo">
+      <div class="info-row"><span class="info-key">Bot Name</span><span class="info-val">—</span></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>🔗 Quick Links</h2>
+    <div class="actions">
+      <a class="btn btn-primary" href="/pair">📱 Pair Device</a>
+      <a class="btn btn-green" href="/dashboard">🛡️ Admin Dashboard</a>
+      <button class="btn btn-ghost" onclick="refresh()">🔄 Refresh Now</button>
+      <button class="btn btn-ghost" onclick="copyJson()">📋 Copy JSON</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>📄 Raw JSON Response</h2>
+    <div class="raw-json" id="rawJson">Loading…</div>
+  </div>
+
+  <div class="refresh-info">Auto-refreshes every 5 seconds · Last updated: <span id="lastUpdate">—</span></div>
+
+  <footer>
+    Mtaula 01 v2.0.0 · Built with TypeScript + Baileys<br>
+    <a href="/health">/health JSON</a> · <a href="/dashboard">Dashboard</a> · <a href="/pair">Pair</a>
+  </footer>
+
+<script>
+let lastData = null;
+
+function fmtUptime(s){
+  const d=Math.floor(s/86400),h=Math.floor((s%86400)/3600),m=Math.floor((s%3600)/60),sec=Math.floor(s%60);
+  const p=[]; if(d)p.push(d+'d'); if(h)p.push(h+'h'); if(m)p.push(m+'m'); p.push(sec+'s');
+  return p.join(' ');
+}
+
+function fmtDate(ts){
+  return new Date(ts).toLocaleString();
+}
+
+async function refresh(){
+  try{
+    const [health, status] = await Promise.all([
+      fetch('/health').then(r=>r.json()),
+      fetch('/api/status').then(r=>r.json()).catch(()=>({})),
+    ]);
+    lastData = { health, status };
+    const connected = status.connected || false;
+    const registered = status.registered || false;
+    const h = health.uptime || 0;
+
+    // Status banner
+    const banner = document.getElementById('statusBanner');
+    const statusText = document.getElementById('statusText');
+    if(connected){
+      banner.className = 'status-banner online';
+      statusText.textContent = 'Online — Connected to WhatsApp';
+    } else if(registered){
+      banner.className = 'status-banner warn';
+      statusText.textContent = 'Reconnecting…';
+    } else {
+      banner.className = 'status-banner offline';
+      statusText.textContent = 'Offline — Awaiting Pairing';
+    }
+
+    // Stats
+    document.getElementById('cStatus').textContent = connected ? 'Online' : registered ? 'Reconnect' : 'Offline';
+    document.getElementById('cStatus').style.color = connected ? 'var(--green)' : registered ? 'var(--yellow)' : 'var(--red)';
+    document.getElementById('cStatusSub').textContent = status.error || (connected ? 'Connected' : 'Not connected');
+
+    document.getElementById('cUptime').textContent = fmtUptime(h);
+    const started = Date.now() - h * 1000;
+    document.getElementById('cRestart').textContent = 'Since ' + fmtDate(started);
+
+    document.getElementById('cJid').textContent = status.jid ? status.jid.split('@')[0].split(':')[0] : '—';
+    document.getElementById('cJidSub').textContent = status.pushName || (status.registered ? 'Registered' : 'Not paired');
+
+    // Health checks
+    const checks = [];
+    checks.push({ ok: true, label: 'Server responding' });
+    checks.push({ ok: connected, label: 'WhatsApp connected' });
+    checks.push({ ok: registered, label: 'Session registered' });
+    checks.push({ ok: h > 0, label: 'Process running' });
+    checks.push({ ok: !status.error, label: status.error ? `Error: ${status.error}` : 'No errors' });
+    checks.push({ ok: !!health.status, label: 'Health endpoint OK' });
+
+    document.getElementById('checks').innerHTML = checks.map(c => `
+      <div class="check">
+        <span class="check-icon ${c.ok?'check-ok':'check-err'}">${c.ok?'✓':'✕'}</span>
+        ${c.label}
+      </div>
+    `).join('');
+
+    // AI Engines
+    try{
+      const eng = await fetch('/api/engines').then(r=>r.json());
+      if(eng.engines){
+        document.getElementById('engines').innerHTML = eng.engines.map(e => `
+          <div class="engine">
+            <span class="engine-name">${e.name}</span>
+            <span class="engine-status">
+              <span class="engine-dot" style="background:${e.configured?'var(--green)':'var(--dim)'}"></span>
+              ${e.configured ? 'Configured' : 'Not configured'}
+            </span>
+          </div>
+        `).join('');
+      }
+    }catch{}
+
+    // Server info
+    const rows = [
+      ['Bot Name', health.bot || '—'],
+      ['Version', health.version || '2.0.0'],
+      ['API Status', health.status || '—'],
+      ['Uptime Seconds', String(Math.floor(h))],
+      ['Last Restart', fmtDate(started)],
+      ['Timestamp', health.timestamp || new Date().toISOString()],
+      ['Registered', registered ? 'Yes' : 'No'],
+      ['Connection Error', status.error || 'None'],
+    ];
+    document.getElementById('serverInfo').innerHTML = rows.map(([k,v]) => `
+      <div class="info-row"><span class="info-key">${k}</span><span class="info-val">${v}</span></div>
+    `).join('');
+
+    // Raw JSON
+    document.getElementById('rawJson').textContent = JSON.stringify(lastData, null, 2);
+
+    document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+  }catch(e){
+    document.getElementById('statusBanner').className = 'status-banner offline';
+    document.getElementById('statusText').textContent = 'Server unreachable';
+    document.getElementById('rawJson').textContent = 'Error: ' + e.message;
+  }
+}
+
+function copyJson(){
+  navigator.clipboard.writeText(JSON.stringify(lastData, null, 2));
+  const el = document.createElement('div');
+  el.style.cssText='position:fixed;bottom:20px;right:20px;padding:10px 18px;border-radius:10px;background:rgba(34,197,94,.15);color:var(--green);border:1px solid rgba(34,197,94,.3);font-size:13px;font-weight:600;z-index:100';
+  el.textContent='JSON copied!';
+  document.body.appendChild(el);
+  setTimeout(()=>el.remove(),2000);
+}
+
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>

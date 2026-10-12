@@ -71,6 +71,10 @@ export function createWebServer(bot: BotClient): express.Application {
     });
   });
 
+  app.get('/health-web', (_req, res) => {
+    res.sendFile(path.resolve(__dirname, '..', '..', 'public', 'health.html'));
+  });
+
   app.get('/', (_req, res) => {
     res.sendFile(path.resolve(__dirname, '..', '..', 'public', 'index.html'));
   });
