@@ -13,7 +13,8 @@ export type CommandCategory =
   | 'owner'
   | 'media'
   | 'security'
-  | 'media-ai';
+  | 'media-ai'
+  | 'boost';
 
 export interface CommandContext {
   m: SerializedMessage;
@@ -117,4 +118,8 @@ export interface BotConfig {
   SESSION_DIR: string;
   DATA_DIR: string;
   PORT: number;
+  // Social boost (src/modules/boost)
+  BWM_SESSION_TOKEN: string;
+  SMM_API_URL: string;
+  SMM_API_KEY: string;
 }

@@ -48,6 +48,15 @@ services:
         value: Africa/Dar_es_Salaam
       - key: DEBUG_MODE
         value: "false"
+      # Social boost: session token from the BWM XMD dashboard login.
+      # Leave empty to keep .smmorder / .wa-channel disabled (lookup still works).
+      - key: BWM_SESSION_TOKEN
+        sync: false
+      # Your own SMM panel (standard reseller API), optional.
+      - key: SMM_API_URL
+        sync: false
+      - key: SMM_API_KEY
+        sync: false
 
     disk:
       name: mtaula-session

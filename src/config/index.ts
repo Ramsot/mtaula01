@@ -50,6 +50,14 @@ const envSchema = z.object({
   SESSION_DIR: z.string().default('./auth_info_baileys'),
   DATA_DIR: z.string().default(''),
   PORT: z.string().default('3000').transform(Number),
+  // --- Social boost --------------------------------------------------------
+  // Session token from the BWM XMD dashboard login; lets the bot read the
+  // wallet and place orders on your account. Leave empty to keep the boost
+  // commands read-only (service lookup still works without it).
+  BWM_SESSION_TOKEN: z.string().default(''),
+  // Your own SMM panel (standard reseller API: /api/v2?action=...).
+  SMM_API_URL: z.string().default(''),
+  SMM_API_KEY: z.string().default(''),
 });
 
 /**
@@ -119,6 +127,9 @@ function loadConfig(): BotConfig {
     SESSION_DIR: e.SESSION_DIR,
     DATA_DIR: resolveDataDir(e.DATA_DIR, e.SESSION_DIR),
     PORT: e.PORT,
+    BWM_SESSION_TOKEN: e.BWM_SESSION_TOKEN,
+    SMM_API_URL: e.SMM_API_URL,
+    SMM_API_KEY: e.SMM_API_KEY,
   };
 }
 

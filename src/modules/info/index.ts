@@ -18,6 +18,7 @@ const CATEGORY_EMOJI: Record<string, string> = {
   media: '🎨',
   security: '🛡️',
   'media-ai': '🧠',
+  boost: '🚀',
 };
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -33,6 +34,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   media: 'MEDIA AI',
   security: 'SECURITY TOOLS',
   'media-ai': 'AI MEDIA',
+  boost: 'SOCIAL BOOST',
 };
 
 export default function infoCommands(): Command[] {

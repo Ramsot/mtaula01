@@ -16,11 +16,14 @@ import mediaCommands from '../src/modules/media/index.js';
 import ownerCommands from '../src/modules/owner/index.js';
 import searchCommands from '../src/modules/search/index.js';
 import toolCommands from '../src/modules/tools/index.js';
+import boostCommands from '../src/modules/boost/index.js';
+import promotionCommands from '../src/modules/boost/promotion.js';
 
 const factories = [
   aiCommands,
   antiDeleteCommands,
   autochatCommands,
+  boostCommands,
   converterCommands,
   downloaderCommands,
   funCommands,
@@ -28,6 +31,7 @@ const factories = [
   infoCommands,
   mediaCommands,
   ownerCommands,
+  promotionCommands,
   searchCommands,
   toolCommands,
 ];
@@ -42,7 +46,8 @@ function allCommands(): Command[] {
 
 describe('command registry', () => {
   it('loads a healthy number of commands', () => {
-    // 85 command names are registered across the 12 modules today.
+    // 85 command names are registered across the 12 modules today; the boost
+    // module adds another ~17 on top.
     expect(allCommands().length).toBeGreaterThanOrEqual(60);
   });
 

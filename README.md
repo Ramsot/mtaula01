@@ -39,6 +39,33 @@ See `.env.example` / `render.yaml`. Notable: `OWNER_NUMBER`, `ADMIN_TOKEN`, `SES
 
 AI engines: `.ai` and auto-chat try Gemini → Groq → OpenAI → Meta AI in order. Set at least one of `GEMINI_KEY` / `GROQ_KEY` / `OPENAI_KEY`.
 
+### Social boost (`src/modules/boost`)
+
+Commands for selling followers/likes/views and for promotion. Fourteen commands in two files: `index.ts` (paid orders) and `promotion.ts` (free helpers).
+
+| Command | What it does |
+| --- | --- |
+| `.boost` | Menu listing everything below and whether it is configured |
+| `.smmsvc <query>` | Search the BWM XMD catalogue (~4,700 services) |
+| `.smmbalance` | XD wallet balance |
+| `.smmorder <id> <link> <qty>` | Place an order — **owner only** |
+| `.smmstatus <id>` | Track an order |
+| `.wa-channel <link> <plan>` | Buy a WhatsApp channel boost package — **owner only** |
+| `.pservices` / `.pbal` / `.porder` / `.pstatus` | Same four against your own SMM panel |
+| `.promo <niche>` | Ready-to-post caption |
+| `.tags <topic>` | Hashtag pack |
+| `.growth <platform>` | 8-step growth checklist (instagram / tiktok / youtube / whatsapp) |
+| `.besttime [platform]` | Best posting times |
+
+Two backends, both optional:
+
+- **BWM XMD** (`pro.bwmxmd.co.ke`) — the anon key is public and needs no setup, so `.smmsvc` works out of the box. Setting `BWM_SESSION_TOKEN` (the `sessionToken` value in dashboard `localStorage` after logging in) additionally enables the wallet and ordering. The three base URLs are tried in order, matching the dashboard's own failover.
+- **Your own panel** (`SMM_API_URL` + `SMM_API_KEY`) — the standard reseller API (`/api/v2?action=services|addorder|status|balance`).
+
+Paid commands check `ctx.isCreator` before touching the wallet, so a random user in `MODE=public` can never spend your balance. Everything else is safe to expose.
+
+The promotion commands need no key at all — captions, hashtags, growth checklists and posting times are generated locally.
+
 ### 24/7 uptime — staying online without sleeping or logging out
 
 The most common cause of "it logs out and asks me to pair again" was **not** WhatsApp: on Render's free tier the service is spun down after ~15 minutes with no inbound traffic. The previous keep-alive pinged `127.0.0.1`, which never leaves the container and therefore does **not** count as activity — the service still slept, the socket died, and the wake-up could read a half-written session.
